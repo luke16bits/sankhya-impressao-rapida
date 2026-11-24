@@ -1,0 +1,44 @@
+name: Build e Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Compilar Release
+        run: cargo build --release
+
+      - name: Compactar Executável
+        run: |
+          powershell Compress-Archive -Path target\release\sankhya-impressao-rapida.exe -DestinationPath sankhya-impressao-rapida-windows-x64.zip
+
+      - name: Publicar Artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: sankhya-impressao-rapida-windows-x64
+          path: target/release/sankhya-impressao-rapida.exe
+
+      - name: Criar Release no GitHub
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/release/sankhya-impressao-rapida.exe
+            sankhya-impressao-rapida-windows-x64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

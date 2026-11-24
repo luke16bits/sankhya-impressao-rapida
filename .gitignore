@@ -1,0 +1,15 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Arquivos temporários e de IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
+[Dd]esktop.ini
+
+# Arquivos intermediários de chaves
+certs/*.p12
+certs/*.pfx
