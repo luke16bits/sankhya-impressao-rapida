@@ -106,6 +106,31 @@ pub async fn system_info_handler() -> impl IntoResponse {
     Json(sys_info).into_response()
 }
 
+/// Serializa um array de String para o formato nativo Java Serialization ([Ljava.lang.String;)
+fn serialize_string_array(items: &[&str]) -> Vec<u8> {
+    let mut payload = vec![
+        0xac, 0xed, 0x00, 0x05, // Magic header (STREAM_MAGIC + STREAM_VERSION)
+        0x75, 0x72,             // TC_ARRAY, TC_CLASSDESC
+        0x00, 0x13,             // Name length (19)
+        0x5b, 0x4c, 0x6a, 0x76, 0x61, 0x2e, 0x6c, 0x61, 0x6e, 0x67, 0x2e, 0x53, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x3b, // [Ljava.lang.String;
+        0xad, 0xd2, 0x56, 0xe7, 0xe9, 0x1d, 0x7b, 0x47, // serialVersionUID
+        0x02, 0x00, 0x00,       // flags (SC_SERIALIZABLE), 0 fields
+        0x78, 0x70,             // TC_ENDBLOCKDATA, TC_NULL
+        ((items.len() >> 24) & 0xff) as u8,
+        ((items.len() >> 16) & 0xff) as u8,
+        ((items.len() >> 8) & 0xff) as u8,
+        (items.len() & 0xff) as u8,
+    ];
+    for s in items {
+        let b = s.as_bytes();
+        payload.push(0x74); // TC_STRING
+        payload.push(((b.len() >> 8) & 0xff) as u8);
+        payload.push((b.len() & 0xff) as u8);
+        payload.extend_from_slice(b);
+    }
+    payload
+}
+
 /// Rota GET/POST /.localPrinting
 pub async fn local_printing_handler(
     headers: HeaderMap,
@@ -170,8 +195,8 @@ pub async fn local_printing_handler(
 
     if !origin.is_empty() && !transaction_id.is_empty() {
         let print_url = format!(
-            "{}/mge/impressaoNotaServlet.mge?acao=execLocalPrint&transactionIds={}&incluirJobsEnviados=true",
-            origin, transaction_id
+            "{}/mge/impressaoNotaServlet.mge?acao=doLocalPrinting&incluirJobsEnviados=true",
+            origin
         );
 
         let client = reqwest::Client::builder()
@@ -179,7 +204,12 @@ pub async fn local_printing_handler(
             .build();
 
         if let Ok(http_client) = client {
-            let mut req = http_client.get(&print_url);
+            let body = serialize_string_array(&[&transaction_id]);
+            let mut req = http_client
+                .post(&print_url)
+                .header("Content-Type", "application/x-java-serialized-object")
+                .body(body);
+
             if !session_id.is_empty() {
                 req = req.header("Cookie", format!("JSESSIONID={}", session_id));
             }
@@ -190,7 +220,7 @@ pub async fn local_printing_handler(
                     if status.is_success() {
                         if let Ok(bytes) = resp.bytes().await {
                             log_msg(&format!(
-                                "[localPrinting] Recebidos {} bytes do Sankhya.",
+                                "[localPrinting] Recebidos {} bytes do servlet Sankhya.",
                                 bytes.len()
                             ));
 
@@ -214,7 +244,7 @@ pub async fn local_printing_handler(
                                 }
                                 if let Some((decompressed, file_name)) = decompressed_opt {
                                     log_msg(&format!(
-                                        "[localPrinting] ZIP descompactado com sucesso! {} bytes compactados -> {} bytes reais (arquivo: {})",
+                                        "[localPrinting] ZIP descompactado! {} bytes compactados -> {} bytes (arquivo: {})",
                                         dados_finais.len(),
                                         decompressed.len(),
                                         file_name
@@ -223,14 +253,69 @@ pub async fn local_printing_handler(
                                 }
                             }
 
+                            // Verificar se dentro há um stream GZIP (magic 1f 8b)
+                            if let Some(pos) = dados_finais.windows(2).position(|w| w == [0x1f, 0x8b]) {
+                                use flate2::read::GzDecoder;
+                                let mut decoder = GzDecoder::new(&dados_finais[pos..]);
+                                let mut decompressed_doc = Vec::new();
+                                if decoder.read_to_end(&mut decompressed_doc).is_ok() && !decompressed_doc.is_empty() {
+                                    log_msg(&format!(
+                                        "[localPrinting] Documento GZIP descompactado com sucesso! ({} bytes)",
+                                        decompressed_doc.len()
+                                    ));
+                                    dados_finais = decompressed_doc;
+                                }
+                            }
+
+                            // Determinar o formato do documento recebido
+                            let is_pdf = dados_finais.starts_with(b"%PDF-");
+                            let is_jasper = dados_finais.starts_with(b"<?xml")
+                                || dados_finais.starts_with(b"<!DOCTYPE jasperPrint")
+                                || dados_finais.windows(12).any(|w| w == b"<jasperPrint");
+
                             log_msg(&format!(
-                                "[localPrinting] Enviando {} bytes para impressora '{}'...",
-                                dados_finais.len(), printer_chosen
+                                "[localPrinting] Formato identificado: PDF={}, JasperXML={}, Tamanho={} bytes",
+                                is_pdf, is_jasper, dados_finais.len()
                             ));
 
-                            match printer::imprimir_raw(&printer_chosen, "Sankhya DANFE", &dados_finais) {
-                                Ok(res) => log_msg(&format!("[localPrinting] Sucesso: {}", res)),
-                                Err(err) => log_msg(&format!("[localPrinting] Erro no driver: {}", err)),
+                            let is_pdf_printer = printer_chosen.to_lowercase().contains("pdf")
+                                || printer_chosen.to_lowercase().contains("xps");
+
+                            if is_pdf || is_pdf_printer {
+                                #[cfg(windows)]
+                                let base_dir = std::env::var("USERPROFILE")
+                                    .map(|p| format!("{}\Downloads", p))
+                                    .unwrap_or_else(|_| "C:\Users\Public\Downloads".into());
+                                #[cfg(not(windows))]
+                                let base_dir = std::env::var("HOME")
+                                    .map(|p| format!("{}/Downloads", p))
+                                    .unwrap_or_else(|_| "/tmp".into());
+
+                                let _ = std::fs::create_dir_all(&base_dir);
+                                let ext = if is_pdf { "pdf" } else { "xml" };
+                                let doc_file = format!("{}\Sankhya_Doc_{}.{}", base_dir, chrono_or_simple_time(), ext);
+
+                                if std::fs::write(&doc_file, &dados_finais).is_ok() {
+                                    log_msg(&format!("[localPrinting] Arquivo gravado com sucesso em: {}", doc_file));
+
+                                    #[cfg(windows)]
+                                    if is_pdf {
+                                        let _ = std::process::Command::new("cmd")
+                                            .args(["/c", "start", "", &doc_file])
+                                            .spawn();
+                                    }
+                                }
+                            }
+
+                            if !is_pdf_printer {
+                                log_msg(&format!(
+                                    "[localPrinting] Enviando {} bytes para impressora física '{}'...",
+                                    dados_finais.len(), printer_chosen
+                                ));
+                                match printer::imprimir_raw(&printer_chosen, "Sankhya Documento", &dados_finais) {
+                                    Ok(res) => log_msg(&format!("[localPrinting] Sucesso no spooler: {}", res)),
+                                    Err(err) => log_msg(&format!("[localPrinting] Erro no driver: {}", err)),
+                                }
                             }
                         }
                     } else {
@@ -246,6 +331,7 @@ pub async fn local_printing_handler(
 
     (StatusCode::OK, "Servidor realizando impressão.").into_response()
 }
+
 
 /// Rota GET/POST /.impressaoDiretaTexto
 pub async fn impressao_direta_texto_handler(
