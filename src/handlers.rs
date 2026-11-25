@@ -1,11 +1,9 @@
 use axum::{
-    extract::Query,
     http::{HeaderMap, StatusCode, Uri},
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde::Serialize;
 
 use crate::printer;
 
@@ -63,19 +61,14 @@ pub async fn system_info_handler() -> impl IntoResponse {
     Json(sys_info).into_response()
 }
 
-#[derive(Deserialize, Default)]
-pub struct PrintParams {
-    pub params: Option<String>,
-}
-
 /// Rota GET/POST /.localPrinting
 pub async fn local_printing_handler(
     headers: HeaderMap,
     uri: Uri,
 ) -> impl IntoResponse {
     let raw_query = uri.query().unwrap_or("");
-    let mut session_id = "";
-    let mut transaction_id = "";
+    let mut session_id = String::new();
+    let mut transaction_id = String::new();
 
     // Tentar extrair do formato ?params=JSESSIONID|TRANSACTION_ID
     if let Some(idx) = raw_query.find("params=") {
@@ -85,8 +78,8 @@ pub async fn local_printing_handler(
         let decoded = urlencoding_decode(val_encoded);
         let parts: Vec<&str> = decoded.split('|').collect();
         if parts.len() >= 2 {
-            session_id = parts[0];
-            transaction_id = parts[1];
+            session_id = parts[0].to_string();
+            transaction_id = parts[1].to_string();
         }
     }
 
@@ -153,7 +146,6 @@ pub async fn fallback_handler(uri: Uri) -> impl IntoResponse {
 }
 
 fn urlencoding_decode(val: &str) -> String {
-    // Decodificação básica de URL percent-encoding
     let mut result = String::new();
     let mut chars = val.chars().peekable();
     while let Some(c) = chars.next() {
