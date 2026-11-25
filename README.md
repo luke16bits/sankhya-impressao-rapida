@@ -1,6 +1,6 @@
-# ⚡ Sankhya Impressão Rápida
+# ⚡ Sankhya Impressão Rápida — Alternativa Leve ao Sankhya Web Connection
 
-> **Substituto ultra-leve, de alta performance e código aberto para o Sankhya Web Connection.**
+> **Substituto ultra-leve, de alta performance e código aberto para o Sankhya Web Connection no ERP Sankhya W e Sankhya Om.**
 
 ---
 
