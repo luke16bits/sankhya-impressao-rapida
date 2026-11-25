@@ -1,4 +1,4 @@
-name: Build e Release
+name: Build e Release Multiplataforma
 
 on:
   push:
@@ -12,7 +12,34 @@ permissions:
   contents: write
 
 jobs:
+  build-linux:
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Compilar Release Linux
+        run: cargo build --release
+
+      - name: Empacotar Binário Linux
+        run: |
+          mkdir -p dist
+          cp target/release/sankhya-impressao-rapida dist/
+          cp -r certs dist/
+          tar -czvf sankhya-impressao-rapida-linux-x86_64.tar.gz -C dist .
+
+      - name: Upload Artefato Linux
+        uses: actions/upload-artifact@v4
+        with:
+          name: sankhya-impressao-rapida-linux-x86_64
+          path: sankhya-impressao-rapida-linux-x86_64.tar.gz
+
   build-windows:
+    name: Build Windows x64 e Instalador
     runs-on: windows-latest
     steps:
       - name: Checkout do código
@@ -23,35 +50,57 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Compilar Release
+      - name: Compilar Release Windows
         run: cargo build --release
 
-      - name: Instalar Inno Setup
-        run: choco install innosetup --no-progress -y
-
-      - name: Gerar Instalador do Windows
-        run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-
-      - name: Compactar Executavel Portatil
+      - name: Compactar Binário Windows (ZIP)
         run: |
           powershell Compress-Archive -Path target\release\sankhya-impressao-rapida.exe -DestinationPath sankhya-impressao-rapida-windows-x64.zip
 
-      - name: Publicar Artefato da Build
+      - name: Compilar Instalador Inno Setup
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+
+      - name: Upload Artefatos Windows
         uses: actions/upload-artifact@v4
         with:
-          name: sankhya-impressao-rapida-windows-x64
-          path: target/release/sankhya-impressao-rapida.exe
+          name: artefatos-windows
+          path: |
+            Instalador-Sankhya-Impressao-Rapida.exe
+            sankhya-impressao-rapida-windows-x64.zip
 
-      - name: Criar ou Atualizar Release no GitHub
+  publish-release:
+    name: Publicar Release no GitHub
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar Artefatos Linux
+        uses: actions/download-artifact@v4
+        with:
+          name: sankhya-impressao-rapida-linux-x86_64
+          path: .
+
+      - name: Baixar Artefatos Windows
+        uses: actions/download-artifact@v4
+        with:
+          name: artefatos-windows
+          path: .
+
+      - name: Criar ou Atualizar Release v1.0.2
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: "Sankhya Impressão Rápida v1.0.0"
-          body: "Substituto nativo e ultra-leve em Rust para o Sankhya Web Connection."
+          tag_name: v1.0.2
+          name: "Sankhya Impressão Rápida v1.0.2"
+          body: |
+            ### 🚀 Novidades da Versão 1.0.2:
+            - **Impressão Direta em PDF sem Travar:** Quando selecionado "Microsoft Print to PDF" ou impresso um DANFE/relatório em PDF, o arquivo agora é gerado e salvo automaticamente e de forma instantânea na Área de Trabalho (`C:\Users\Public\Desktop` no Windows e `~/Downloads` no Linux).
+            - **Suporte Multiplataforma Nativo:** Agora compatível com Windows e Linux (CachyOS, Arch, Ubuntu, Debian, etc.).
+            - **Decodificação Completa de Base64 e JSON:** Decodifica com precisão todos os parâmetros enviados pelo JavaScript do Sankhya (`AppletCaller.js`).
+            - **Log de Diagnóstico Local:** Rastreamento de impressões gravado em tempo real em `service.log`.
+            - **Instalador Oficial Atualizado:** `Instalador-Sankhya-Impressao-Rapida.exe` pronto para 1 clique com serviço silencioso.
           files: |
             Instalador-Sankhya-Impressao-Rapida.exe
-            target/release/sankhya-impressao-rapida.exe
             sankhya-impressao-rapida-windows-x64.zip
+            sankhya-impressao-rapida-linux-x86_64.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

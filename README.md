@@ -21,8 +21,10 @@ No entanto, a implementação baseada em Java consome frequentemente **mais de 2
 O **Sankhya Impressão Rápida** é uma reengenharia nativa escrita em **Rust**, desenvolvida para fornecer:
 * 🚀 **Velocidade extrema:** Tempo de resposta em microssegundos.
 * 💾 **Economia de memória:** Menos de **5 MB de RAM** (redução de mais de 98% do consumo).
-* ⚙️ **Sem necessidade de Java:** Executável 100% nativo em código de máquina para Windows.
-* 🛡️ **Serviço Nativo do Windows:** Inicia silenciosamente com o sistema operacional sem precisar de janelas abertas.
+* ⚙️ **Sem necessidade de Java:** Executável 100% nativo em código de máquina.
+* 🐧 **Multiplataforma Nativo:** Suporte completo para **Windows** e **Linux** (CachyOS, Arch, Ubuntu, etc.).
+* 🛡️ **Serviço Silencioso:** Inicia automaticamente com o sistema operacional sem precisar de janelas abertas ou ícones pesados na bandeja.
+* 📄 **Impressão em PDF sem Travar:** Gravação automática instantânea na Área de Trabalho para "Microsoft Print to PDF" e DANFEs.
 * 🔒 **Comunicação Segura:** Suporte completo HTTPS (`porta 9196`) e HTTP (`porta 9096`) com certificados e suporte ao Private Network Access (PNA) do Chrome.
 
 ---
@@ -39,20 +41,19 @@ O **Sankhya Impressão Rápida** é uma reengenharia nativa escrita em **Rust**,
         │
         ├── /.info              -> Validação de status do Web Connection
         ├── /.pList             -> Lista de impressoras instaladas
-        ├── /.pDefaultPrinter   -> Impressora padrão do Windows
+        ├── /.pDefaultPrinter   -> Impressora padrão do sistema
         ├── /.systemInfo        -> Identificação da máquina e usuário
-        └── /.localPrinting     -> Envio de jobs de impressão
+        └── /.localPrinting     -> Envio de jobs de impressão e DANFEs
         │
-        ▼ (Win32 Spooler API - winspool.drv)
-[ Impressora Térmica / Zebra / Laser / PDF ]
+        ├── [Windows] Win32 Spooler API (winspool.drv) / Salvar PDF
+        └── [Linux]   CUPS (lp) / Salvar PDF em ~/Downloads
 ```
 
 ---
 
 ## 📦 Instalação
 
-### Opção 1: Instalador Automático com 1 Clique (Recomendado) 🌟
-Não precisa abrir terminal nem rodar comandos:
+### Opção 1: Instalador Automático Windows com 1 Clique (Recomendado) 🌟
 1. Baixe o instalador oficial: **[Instalador-Sankhya-Impressao-Rapida.exe](https://github.com/luke16bits/sankhya-impressao-rapida/releases/latest)**
 2. Dê dois cliques no instalador e siga o assistente ("Avançar" -> "Instalar").
 3. **Pronto!** O serviço será automaticamente instalado, configurado para inicializar com o Windows e já começará a rodar em segundo plano.
@@ -60,28 +61,45 @@ Não precisa abrir terminal nem rodar comandos:
 
 ---
 
-### Opção 2: Executável Portátil (Linha de Comando)
+### Opção 2: Linux (CachyOS, Arch, Ubuntu, Debian, etc.) 🐧
+1. Baixe o arquivo **[sankhya-impressao-rapida-linux-x86_64.tar.gz](https://github.com/luke16bits/sankhya-impressao-rapida/releases/latest)**
+2. Extraia o arquivo e execute pelo terminal:
+   ```bash
+   tar -xzvf sankhya-impressao-rapida-linux-x86_64.tar.gz
+   ./sankhya-impressao-rapida
+   ```
+3. Os PDFs gerados são salvos automaticamente na pasta `~/Downloads`.
 
-Para quem prefere rodar manualmente ou gerenciar por linha de comando:
+---
 
-* **Modo Direto (Para Testes na tela):**
-  Dê dois cliques em `sankhya-impressao-rapida.exe`. Uma janela se abrirá mostrando as conexões em tempo real.
-* **Instalar como Serviço do Windows:**
-  No Prompt de Comando (CMD) como **Administrador**:
-  ```cmd
-  sankhya-impressao-rapida.exe install
-  ```
-* **Remover o Serviço:**
-  ```cmd
-  sankhya-impressao-rapida.exe uninstall
-  ```
+## 💡 Dúvidas Frequentes e Boas Práticas (FAQ)
+
+### 1. O aviso "Web Connection não encontrado" apareceu no login do Sankhya. O que fazer?
+Existem duas maneiras simples de lidar com isso:
+- **Solução Rápida:** Basta clicar em **"Continuar mesmo assim"**. O sistema abrirá normalmente e todas as funcionalidades de telas e impressões funcionarão perfeitamente.
+- **Solução Definitiva (Desativar o aviso no ERP):** Se você não deseja que o Sankhya fique checando a identificação de máquina em cada login:
+  1. Acesse o menu sanduíche do Sankhya e vá em: **Configurações > Avançado > Parâmetros da Aplicação**.
+  2. Pesquise pelo parâmetro: `USAAPPIDET` (ou `global.usa.app.identificacao`).
+  3. Altere o valor para **NÃO** (`N`) e salve.
+  4. Pronto! O Sankhya iniciará direto sem exibir a janela amarela de aviso.
+
+### 2. Como permitir o acesso no Google Chrome (Private Network Access)?
+Navegadores Chromium modernos bloqueiam requisições de sites externos para o seu computador (`localhost`) por padrão.
+- Na barra de endereços do Chrome (ao lado do cadeado ou nome do site), clique no **ícone de configurações do site**.
+- Procure por **"Acesso à rede local"** (Local network access) e marque **Permitir**.
+- Essa configuração só precisa ser feita **uma única vez** por navegador.
+
+### 3. Como funciona a impressão em PDF?
+Quando você seleciona a impressora **"Microsoft Print to PDF"** ou imprime DANFEs/relatórios que geram PDF:
+- O arquivo é gerado e gravado instantaneamente na pasta **Área de Trabalho Pública** (`C:\Users\Public\Desktop\Sankhya_DANFE_<data>.pdf`).
+- O arquivo aparece imediatamente na sua Área de Trabalho com qualidade original, sem travar o serviço e sem depender de janelas gráficas de diálogo.
 
 ---
 
 ## 🛠️ Como Compilar
 
 ### Compilação Automática no GitHub (CI/CD)
-O repositório já inclui o GitHub Actions configurado. Qualquer push na branch `main` compila o projeto no ambiente Windows na nuvem e publica o executável e o instalador na aba **Releases**.
+O repositório já inclui o GitHub Actions configurado. Qualquer push na branch `main` compila o projeto nos ambientes Windows e Linux na nuvem e publica os executáveis e instaladores na aba **Releases**.
 
 ### Compilação Local
 Com o Rust instalado:

@@ -4,8 +4,45 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use std::io::Write;
+use std::sync::Mutex;
 
 use crate::printer;
+
+static LOG_MUTEX: Mutex<()> = Mutex::new(());
+
+/// Grava mensagem de log no console e em arquivo de log no disco
+pub fn log_msg(msg: &str) {
+    let now = chrono_or_simple_time();
+    let formatted = format!("[{}] {}", now, msg);
+    println!("{}", formatted);
+
+    if let Ok(_lock) = LOG_MUTEX.lock() {
+        #[cfg(windows)]
+        let log_dir = "C:\\ProgramData\\SankhyaImpressaoRapida";
+        #[cfg(not(windows))]
+        let log_dir = "/tmp";
+
+        let _ = std::fs::create_dir_all(log_dir);
+        let log_path = format!("{}/service.log", log_dir);
+
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            let _ = writeln!(file, "{}", formatted);
+        }
+    }
+}
+
+fn chrono_or_simple_time() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    format!("{}", now)
+}
 
 #[derive(Serialize)]
 pub struct SystemInfoResponse {
@@ -25,6 +62,7 @@ pub struct SystemInfoResponse {
 
 /// Rota GET/POST /.info
 pub async fn info_handler(uri: Uri) -> impl IntoResponse {
+    log_msg(&format!("Requisição recebida em: {}", uri));
     if uri.query().map(|q| q.contains("webcn=true")).unwrap_or(false) {
         return (StatusCode::OK, "false").into_response();
     }
@@ -34,19 +72,25 @@ pub async fn info_handler(uri: Uri) -> impl IntoResponse {
 /// Rota GET/POST /.pList
 pub async fn plist_handler() -> impl IntoResponse {
     let impressoras = printer::listar_impressoras();
+    log_msg(&format!("[pList] Impressoras encontradas: {}", impressoras));
     (StatusCode::OK, impressoras).into_response()
 }
 
 /// Rota GET/POST /.pDefaultPrinter
 pub async fn pdefault_printer_handler() -> impl IntoResponse {
     let padrao = printer::impressora_padrao();
+    log_msg(&format!("[pDefaultPrinter] Impressora padrão: {}", padrao));
     (StatusCode::OK, padrao).into_response()
 }
 
 /// Rota GET/POST /.systemInfo
 pub async fn system_info_handler() -> impl IntoResponse {
-    let client_name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "LOCALHOST".into());
-    let user_name = std::env::var("USERNAME").unwrap_or_else(|_| "USUARIO".into());
+    let client_name = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "LOCALHOST".into());
+    let user_name = std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_else(|_| "USUARIO".into());
     let domain_name = std::env::var("USERDOMAIN").unwrap_or_else(|_| "WORKGROUP".into());
 
     let sys_info = SystemInfoResponse {
@@ -58,6 +102,7 @@ pub async fn system_info_handler() -> impl IntoResponse {
         domain_name,
     };
 
+    log_msg(&format!("[systemInfo] Respondendo identificação: {}", sys_info.info_pc));
     Json(sys_info).into_response()
 }
 
@@ -67,20 +112,50 @@ pub async fn local_printing_handler(
     uri: Uri,
 ) -> impl IntoResponse {
     let raw_query = uri.query().unwrap_or("");
+    log_msg(&format!("[localPrinting] Requisição recebida: query={}", raw_query));
+
     let mut session_id = String::new();
     let mut transaction_id = String::new();
+    let mut printer_chosen = String::new();
 
-    // Tentar extrair do formato ?params=JSESSIONID|TRANSACTION_ID
+    // Extrair o parâmetro ?params=
     if let Some(idx) = raw_query.find("params=") {
         let p_val = &raw_query[idx + 7..];
         let p_end = p_val.find('&').unwrap_or(p_val.len());
         let val_encoded = &p_val[..p_end];
         let decoded = urlencoding_decode(val_encoded);
-        let parts: Vec<&str> = decoded.split('|').collect();
-        if parts.len() >= 2 {
-            session_id = parts[0].to_string();
-            transaction_id = parts[1].to_string();
+
+        // Tentar decodificar Base64
+        if let Some(base64_decoded) = base64_decode(&decoded) {
+            if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&base64_decoded) {
+                log_msg(&format!("[localPrinting] JSON decodificado de Base64: {:?}", json));
+                if let Some(s) = json.get("jsessionid").and_then(|v| v.as_str()) {
+                    session_id = s.to_string();
+                }
+                if let Some(t) = json.get("transactionIds").or_else(|| json.get("transactionId")).and_then(|v| v.as_str()) {
+                    transaction_id = t.to_string();
+                }
+                if let Some(p) = json.get("printer").or_else(|| json.get("printerName")).and_then(|v| v.as_str()) {
+                    printer_chosen = p.to_string();
+                }
+            }
         }
+
+        // Se não foi Base64 JSON, tenta formato delimitado por pipe (sessionId|transactionId|printer)
+        if transaction_id.is_empty() {
+            let parts: Vec<&str> = decoded.split('|').collect();
+            if parts.len() >= 2 {
+                session_id = parts[0].to_string();
+                transaction_id = parts[1].to_string();
+                if parts.len() >= 3 {
+                    printer_chosen = parts[2].to_string();
+                }
+            }
+        }
+    }
+
+    if printer_chosen.is_empty() {
+        printer_chosen = printer::impressora_padrao();
     }
 
     let origin = headers
@@ -88,10 +163,10 @@ pub async fn local_printing_handler(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    println!(
-        "[Impressão] Solicitada: Transaction={}, Origin={}, Session={}",
-        transaction_id, origin, session_id
-    );
+    log_msg(&format!(
+        "[localPrinting] Processando: Transaction='{}', Impressora='{}', Origin='{}'",
+        transaction_id, printer_chosen, origin
+    ));
 
     if !origin.is_empty() && !transaction_id.is_empty() {
         let print_url = format!(
@@ -104,18 +179,31 @@ pub async fn local_printing_handler(
             .build();
 
         if let Ok(http_client) = client {
-            let res = http_client
-                .get(&print_url)
-                .header("Cookie", format!("JSESSIONID={}", session_id))
-                .send()
-                .await;
+            let mut req = http_client.get(&print_url);
+            if !session_id.is_empty() {
+                req = req.header("Cookie", format!("JSESSIONID={}", session_id));
+            }
 
-            if let Ok(resp) = res {
-                if let Ok(bytes) = resp.bytes().await {
-                    let padrao = printer::impressora_padrao();
-                    if !padrao.is_empty() {
-                        let _ = printer::imprimir_raw(&padrao, "Sankhya Doc", &bytes);
+            match req.send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if status.is_success() {
+                        if let Ok(bytes) = resp.bytes().await {
+                            log_msg(&format!(
+                                "[localPrinting] Recebidos {} bytes do Sankhya. Enviando para impressora '{}'...",
+                                bytes.len(), printer_chosen
+                            ));
+                            match printer::imprimir_raw(&printer_chosen, "Sankhya DANFE", &bytes) {
+                                Ok(res) => log_msg(&format!("[localPrinting] Sucesso: {}", res)),
+                                Err(err) => log_msg(&format!("[localPrinting] Erro no driver: {}", err)),
+                            }
+                        }
+                    } else {
+                        log_msg(&format!("[localPrinting] Servlet retornou status HTTP: {}", status));
                     }
+                }
+                Err(e) => {
+                    log_msg(&format!("[localPrinting] Falha ao baixar job do servlet: {:?}", e));
                 }
             }
         }
@@ -131,9 +219,8 @@ pub async fn impressao_direta_texto_handler(
     if let Some(texto) = body {
         if !texto.is_empty() {
             let padrao = printer::impressora_padrao();
-            if !padrao.is_empty() {
-                let _ = printer::imprimir_raw(&padrao, "Sankhya Texto", texto.as_bytes());
-            }
+            log_msg(&format!("[impressaoDiretaTexto] Enviando {} bytes para {}", texto.len(), padrao));
+            let _ = printer::imprimir_raw(&padrao, "Sankhya Texto", texto.as_bytes());
         }
     }
     (StatusCode::OK, "Impressão direta realizada.").into_response()
@@ -141,7 +228,7 @@ pub async fn impressao_direta_texto_handler(
 
 /// Rota de Fallback para qualquer outro endpoint do Sankhya
 pub async fn fallback_handler(uri: Uri) -> impl IntoResponse {
-    println!("[Fallback] Requisição recebida em: {}", uri);
+    log_msg(&format!("[Fallback] Rota não mapeada chamada: {}", uri));
     (StatusCode::OK, "dados do sistema:  versao: 1.0 uptime: 0").into_response()
 }
 
@@ -162,4 +249,40 @@ fn urlencoding_decode(val: &str) -> String {
         }
     }
     result
+}
+
+fn base64_decode(input: &str) -> Option<Vec<u8>> {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut clean: Vec<u8> = input.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    if clean.is_empty() {
+        return None;
+    }
+
+    let mut buf = Vec::with_capacity(clean.len() * 3 / 4);
+    let mut sextets = [0u8; 4];
+    let mut count = 0;
+
+    for b in clean.drain(..) {
+        if b == b'=' {
+            break;
+        }
+        let val = TABLE.iter().position(|&x| x == b)? as u8;
+        sextets[count] = val;
+        count += 1;
+        if count == 4 {
+            buf.push((sextets[0] << 2) | (sextets[1] >> 4));
+            buf.push((sextets[1] << 4) | (sextets[2] >> 2));
+            buf.push((sextets[2] << 6) | sextets[3]);
+            count = 0;
+        }
+    }
+
+    if count == 2 {
+        buf.push((sextets[0] << 2) | (sextets[1] >> 4));
+    } else if count == 3 {
+        buf.push((sextets[0] << 2) | (sextets[1] >> 4));
+        buf.push((sextets[1] << 4) | (sextets[2] >> 2));
+    }
+
+    Some(buf)
 }

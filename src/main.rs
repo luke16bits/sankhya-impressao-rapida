@@ -1,11 +1,13 @@
-mod handlers;
-mod printer;
-mod service;
+pub mod handlers;
+pub mod printer;
+
+#[cfg(windows)]
+pub mod service;
 
 use axum::{
     middleware::{self, Next},
     response::Response,
-    routing::{get, post},
+    routing::get,
     Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
@@ -66,7 +68,6 @@ async fn cors_and_pna_middleware(mut req: axum::extract::Request, next: Next) ->
 }
 
 pub async fn iniciar_servidores() {
-    // Inicializar o provedor criptográfico Ring para o Rustls 0.23
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let port_http = std::env::var("PORTA_HTTP")
@@ -107,12 +108,12 @@ pub async fn iniciar_servidores() {
         .fallback(handlers::fallback_handler)
         .layer(middleware::from_fn(cors_and_pna_middleware));
 
-    println!("=====================================================");
-    println!("  Sankhya Impressão Rápida v1.0.2 (Rust)");
-    println!("  Substituto leve e de alta performance do Web Connection");
-    println!("  Servidor HTTP  em http://127.0.0.1:{}", port_http);
-    println!("  Servidor HTTPS em https://127.0.0.1:{}", port_https);
-    println!("=====================================================");
+    handlers::log_msg("=====================================================");
+    handlers::log_msg("  Sankhya Impressão Rápida v1.0.2 (Rust)");
+    handlers::log_msg("  Substituto nativo e ultra-leve para o Web Connection");
+    handlers::log_msg(&format!("  Servidor HTTP  em http://127.0.0.1:{}", port_http));
+    handlers::log_msg(&format!("  Servidor HTTPS em https://127.0.0.1:{}", port_https));
+    handlers::log_msg("=====================================================");
 
     let tls_config = RustlsConfig::from_pem(CERT_PEM.to_vec(), KEY_PEM.to_vec())
         .await
@@ -145,6 +146,7 @@ pub async fn iniciar_servidores() {
     }
 }
 
+#[cfg(windows)]
 fn instalar_certificado_raiz() {
     println!("Instalando certificado SSL na lista de Autoridades Confiáveis do Windows...");
     let temp_cert = std::env::temp_dir().join("sankhya_cert_temp.pem");
@@ -156,6 +158,7 @@ fn instalar_certificado_raiz() {
     }
 }
 
+#[cfg(windows)]
 fn elevar_uac(comando: &str) -> bool {
     let exe = std::env::current_exe().unwrap();
     let script = format!(
@@ -173,6 +176,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(|s| s.as_str()).unwrap_or("");
 
+    #[cfg(windows)]
     match cmd {
         "install" | "--install" => {
             println!("Registrando o serviço no Windows...");
@@ -207,6 +211,7 @@ fn main() {
                     }
                 }
             }
+            return;
         }
         "uninstall" | "--uninstall" => {
             println!("Removendo o serviço do Windows...");
@@ -227,17 +232,21 @@ fn main() {
                     }
                 }
             }
+            return;
         }
         "service" | "--service" => {
             if let Err(e) = service::start_dispatcher() {
                 eprintln!("Erro no despachante do serviço: {:?}", e);
             }
+            return;
         }
-        _ => {
-            println!("Iniciando em modo direto (pressione Ctrl+C para encerrar)...");
-            println!("Dica: Para instalar como serviço silencioso do Windows, execute com 'install'.");
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(iniciar_servidores());
-        }
+        _ => {}
     }
+
+    #[allow(unused_variables)]
+    let _ = cmd;
+    println!("Iniciando Sankhya Impressão Rápida...");
+    println!("Pressione Ctrl+C para encerrar.");
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(iniciar_servidores());
 }

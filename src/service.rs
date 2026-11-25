@@ -1,3 +1,4 @@
+#![cfg(windows)]
 // Módulo para rodar e gerenciar o serviço nativo do Windows (services.msc)
 use std::ffi::OsString;
 use std::sync::atomic::{AtomicBool, Ordering};
