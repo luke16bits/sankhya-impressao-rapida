@@ -58,7 +58,7 @@ fn run_service() -> Result<(), windows_service::Error> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         tokio::select! {
-            _ = crate::iniciar_servidor_https() => {},
+            _ = crate::iniciar_servidores() => {},
             _ = async {
                 while running.load(Ordering::SeqCst) {
                     tokio::time::sleep(Duration::from_millis(500)).await;
