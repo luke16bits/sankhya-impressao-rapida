@@ -1,6 +1,6 @@
 [package]
 name = "sankhya-impressao-rapida"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 description = "Substituto ultra-leve em Rust para o Sankhya Web Connection (ERP Sankhya W)"
 authors = ["Comunidade Sankhya"]
@@ -10,6 +10,8 @@ license = "MIT"
 tokio = { version = "1.38", features = ["full"] }
 axum = { version = "0.7", features = ["default"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["cors"] }
 
 serde = { version = "1.0", features = ["derive"] }
