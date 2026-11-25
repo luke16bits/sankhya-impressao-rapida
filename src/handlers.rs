@@ -284,8 +284,8 @@ pub async fn local_printing_handler(
                             if is_pdf || is_pdf_printer {
                                 #[cfg(windows)]
                                 let base_dir = std::env::var("USERPROFILE")
-                                    .map(|p| format!("{}\Downloads", p))
-                                    .unwrap_or_else(|_| "C:\Users\Public\Downloads".into());
+                                    .map(|p| format!("{}/Downloads", p))
+                                    .unwrap_or_else(|_| "C:/Users/Public/Downloads".into());
                                 #[cfg(not(windows))]
                                 let base_dir = std::env::var("HOME")
                                     .map(|p| format!("{}/Downloads", p))
@@ -293,7 +293,7 @@ pub async fn local_printing_handler(
 
                                 let _ = std::fs::create_dir_all(&base_dir);
                                 let ext = if is_pdf { "pdf" } else { "xml" };
-                                let doc_file = format!("{}\Sankhya_Doc_{}.{}", base_dir, chrono_or_simple_time(), ext);
+                                let doc_file = format!("{}/Sankhya_Doc_{}.{}", base_dir, chrono_or_simple_time(), ext);
 
                                 if std::fs::write(&doc_file, &dados_finais).is_ok() {
                                     log_msg(&format!("[localPrinting] Arquivo gravado com sucesso em: {}", doc_file));
