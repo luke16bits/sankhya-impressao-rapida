@@ -2,7 +2,7 @@
 [Setup]
 AppId={{E68A5D6B-4C67-428E-8A51-2292E47BF4F1}
 AppName=Sankhya Impressão Rápida
-AppVersion=1.0.6
+AppVersion=1.0.7
 AppPublisher=Comunidade Sankhya Open Source
 AppPublisherURL=https://github.com/luke16bits/sankhya-impressao-rapida
 AppSupportURL=https://github.com/luke16bits/sankhya-impressao-rapida/issues
@@ -18,6 +18,12 @@ WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=force
+RestartApplications=no
+
+[InstallDelete]
+Type: files; Name: "{app}\sankhya-impressao-rapida.exe"
+Type: files; Name: "{app}\cert.pem"
+Type: files; Name: "{app}\JasperToPdf.class"
 
 [Languages]
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
@@ -25,6 +31,7 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 [Files]
 Source: "target\release\sankhya-impressao-rapida.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "certs\cert.pem"; DestDir: "{app}"; Flags: ignoreversion
+Source: "helpers\JasperToPdf.class"; DestDir: "{app}"; Flags: ignoreversion
 
 [Code]
 // Para o serviço anterior e finaliza o processo antes de extrair os novos arquivos

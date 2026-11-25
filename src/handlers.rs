@@ -106,13 +106,87 @@ pub async fn system_info_handler() -> impl IntoResponse {
     Json(sys_info).into_response()
 }
 
+const JASPER_TO_PDF_CLASS: &[u8] = include_bytes!("../helpers/JasperToPdf.class");
+
+/// Converte JasperPrint XML em PDF utilizando o helper Java e snklocalapp.jar
+fn converter_jasper_para_pdf(xml_data: &[u8]) -> Option<Vec<u8>> {
+    let temp_dir = std::env::temp_dir();
+    let class_file = temp_dir.join("JasperToPdf.class");
+    if !class_file.exists() {
+        let _ = std::fs::write(&class_file, JASPER_TO_PDF_CLASS);
+    }
+
+    let timestamp = chrono_or_simple_time();
+    let temp_xml = temp_dir.join(format!("snk_doc_{}.xml", timestamp));
+    let temp_pdf = temp_dir.join(format!("snk_doc_{}.pdf", timestamp));
+
+    if std::fs::write(&temp_xml, xml_data).is_err() {
+        return None;
+    }
+
+    let java_candidates = [
+        "C:\\SankhyaW\\WebConnection\\Sankhya_web_connectionx64\\jre\\bin\\java.exe",
+        "C:\\Program Files\\Sankhya Impressao Rapida\\jre\\bin\\java.exe",
+        "java",
+    ];
+
+    let jar_candidates = [
+        "C:\\SankhyaW\\WebConnection\\Sankhya_web_connectionx64\\executar\\build\\snklocalapp.jar",
+        "C:\\Program Files\\Sankhya Impressao Rapida\\snklocalapp.jar",
+    ];
+
+    let mut java_exe = "java";
+    for j in &java_candidates {
+        if std::path::Path::new(j).exists() {
+            java_exe = *j;
+            break;
+        }
+    }
+
+    let mut jar_path = None;
+    for jar in &jar_candidates {
+        if std::path::Path::new(jar).exists() {
+            jar_path = Some(*jar);
+            break;
+        }
+    }
+
+    if let Some(jar) = jar_path {
+        let cp = format!("{};{}", temp_dir.display(), jar);
+        let status = std::process::Command::new(java_exe)
+            .args(["-cp", &cp, "JasperToPdf", temp_xml.to_str().unwrap(), temp_pdf.to_str().unwrap()])
+            .status();
+
+        let _ = std::fs::remove_file(&temp_xml);
+
+        if let Ok(s) = status {
+            if s.success() && temp_pdf.exists() {
+                if let Ok(pdf_bytes) = std::fs::read(&temp_pdf) {
+                    let _ = std::fs::remove_file(&temp_pdf);
+                    log_msg(&format!(
+                        "[localPrinting] Conversão JasperXML -> PDF concluída com sucesso! ({} bytes)",
+                        pdf_bytes.len()
+                    ));
+                    return Some(pdf_bytes);
+                }
+            }
+        }
+        let _ = std::fs::remove_file(&temp_pdf);
+    } else {
+        log_msg("[localPrinting] Aviso: snklocalapp.jar não encontrado para converter JasperXML.");
+        let _ = std::fs::remove_file(&temp_xml);
+    }
+
+    None
+}
+
 /// Serializa um array de String para o formato nativo Java Serialization ([Ljava.lang.String;)
 fn serialize_string_array(items: &[&str]) -> Vec<u8> {
     let mut payload = vec![
         0xac, 0xed, 0x00, 0x05, // Magic header (STREAM_MAGIC + STREAM_VERSION)
         0x75, 0x72,             // TC_ARRAY, TC_CLASSDESC
         0x00, 0x13,             // Name length (19)
-        0x5b, 0x4c, 0x6a, 0x76, 0x61, 0x2e, 0x6c, 0x61, 0x6e, 0x67, 0x2e, 0x53, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x3b, // [Ljava.lang.String;
+        0x5b, 0x4c, 0x6a, 0x61, 0x76, 0x61, 0x2e, 0x6c, 0x61, 0x6e, 0x67, 0x2e, 0x53, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x3b, // [Ljava.lang.String;
         0xad, 0xd2, 0x56, 0xe7, 0xe9, 0x1d, 0x7b, 0x47, // serialVersionUID
         0x02, 0x00, 0x00,       // flags (SC_SERIALIZABLE), 0 fields
         0x78, 0x70,             // TC_ENDBLOCKDATA, TC_NULL
@@ -253,35 +327,55 @@ pub async fn local_printing_handler(
                                 }
                             }
 
-                            // Verificar se dentro há um stream GZIP (magic 1f 8b)
-                            if let Some(pos) = dados_finais.windows(2).position(|w| w == [0x1f, 0x8b]) {
-                                use flate2::read::GzDecoder;
-                                let mut decoder = GzDecoder::new(&dados_finais[pos..]);
-                                let mut decompressed_doc = Vec::new();
-                                if decoder.read_to_end(&mut decompressed_doc).is_ok() && !decompressed_doc.is_empty() {
-                                    log_msg(&format!(
-                                        "[localPrinting] Documento GZIP descompactado com sucesso! ({} bytes)",
-                                        decompressed_doc.len()
-                                    ));
-                                    dados_finais = decompressed_doc;
+                            // 2. Extrair PDF puro se embutido dentro do objeto serializado
+                            let mut pdf_bytes: Option<Vec<u8>> = None;
+                            if let Some(pos) = dados_finais.windows(5).position(|w| w == b"%PDF-") {
+                                let slice = &dados_finais[pos..];
+                                if let Some(eof_pos) = slice.windows(5).rposition(|w| w == b"%%EOF") {
+                                    pdf_bytes = Some(slice[..eof_pos + 5].to_vec());
+                                } else {
+                                    pdf_bytes = Some(slice.to_vec());
+                                }
+                                log_msg(&format!(
+                                    "[localPrinting] Documento PDF puro extraído com sucesso! ({} bytes)",
+                                    pdf_bytes.as_ref().unwrap().len()
+                                ));
+                            }
+
+                            // 3. Se não achou PDF direto, verifica se dentro há stream GZIP (Jasper XML)
+                            if pdf_bytes.is_none() {
+                                if let Some(pos) = dados_finais.windows(2).position(|w| w == [0x1f, 0x8b]) {
+                                    use flate2::read::GzDecoder;
+                                    let mut decoder = GzDecoder::new(&dados_finais[pos..]);
+                                    let mut decompressed_doc = Vec::new();
+                                    if decoder.read_to_end(&mut decompressed_doc).is_ok() && !decompressed_doc.is_empty() {
+                                        log_msg(&format!(
+                                            "[localPrinting] Stream GZIP descompactado! ({} bytes)",
+                                            decompressed_doc.len()
+                                        ));
+                                        dados_finais = decompressed_doc;
+                                    }
+                                }
+
+                                // Se o conteúdo é Jasper XML, converter para PDF com o JasperToPdf
+                                let is_jasper = dados_finais.starts_with(b"<?xml")
+                                    || dados_finais.starts_with(b"<!DOCTYPE jasperPrint")
+                                    || dados_finais.windows(12).any(|w| w == b"<jasperPrint");
+
+                                if is_jasper {
+                                    log_msg("[localPrinting] JasperPrint XML detectado. Iniciando conversão para PDF...");
+                                    if let Some(converted) = converter_jasper_para_pdf(&dados_finais) {
+                                        pdf_bytes = Some(converted);
+                                    }
                                 }
                             }
 
-                            // Determinar o formato do documento recebido
-                            let is_pdf = dados_finais.starts_with(b"%PDF-");
-                            let is_jasper = dados_finais.starts_with(b"<?xml")
-                                || dados_finais.starts_with(b"<!DOCTYPE jasperPrint")
-                                || dados_finais.windows(12).any(|w| w == b"<jasperPrint");
-
-                            log_msg(&format!(
-                                "[localPrinting] Formato identificado: PDF={}, JasperXML={}, Tamanho={} bytes",
-                                is_pdf, is_jasper, dados_finais.len()
-                            ));
-
+                            // 4. Despacho inteligente para impressão ou abertura de documento
                             let is_pdf_printer = printer_chosen.to_lowercase().contains("pdf")
-                                || printer_chosen.to_lowercase().contains("xps");
+                                || printer_chosen.to_lowercase().contains("xps")
+                                || printer_chosen.is_empty();
 
-                            if is_pdf || is_pdf_printer {
+                            if let Some(pdf) = pdf_bytes {
                                 #[cfg(windows)]
                                 let base_dir = std::env::var("USERPROFILE")
                                     .map(|p| format!("{}/Downloads", p))
@@ -292,24 +386,49 @@ pub async fn local_printing_handler(
                                     .unwrap_or_else(|_| "/tmp".into());
 
                                 let _ = std::fs::create_dir_all(&base_dir);
-                                let ext = if is_pdf { "pdf" } else { "xml" };
-                                let doc_file = format!("{}/Sankhya_Doc_{}.{}", base_dir, chrono_or_simple_time(), ext);
+                                let doc_file = format!("{}/Sankhya_Doc_{}.pdf", base_dir, chrono_or_simple_time());
 
-                                if std::fs::write(&doc_file, &dados_finais).is_ok() {
-                                    log_msg(&format!("[localPrinting] Arquivo gravado com sucesso em: {}", doc_file));
+                                if std::fs::write(&doc_file, &pdf).is_ok() {
+                                    log_msg(&format!("[localPrinting] PDF salvo com sucesso em: {}", doc_file));
 
-                                    #[cfg(windows)]
-                                    if is_pdf {
+                                    if is_pdf_printer {
+                                        #[cfg(windows)]
                                         let _ = std::process::Command::new("cmd")
                                             .args(["/c", "start", "", &doc_file])
                                             .spawn();
+                                        #[cfg(not(windows))]
+                                        let _ = std::process::Command::new("xdg-open")
+                                            .arg(&doc_file)
+                                            .spawn();
+                                    } else {
+                                        // Envio para impressora física
+                                        #[cfg(windows)]
+                                        {
+                                            let print_cmd = format!(
+                                                "Start-Process -FilePath '{}' -Verb PrintTo -ArgumentList '\"{}\"'",
+                                                doc_file.replace('/', "\\"),
+                                                printer_chosen
+                                            );
+                                            log_msg(&format!("[localPrinting] Enviando PDF para impressora '{}' via Windows Shell...", printer_chosen));
+                                            let _ = std::process::Command::new("powershell")
+                                                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &print_cmd])
+                                                .spawn();
+                                        }
+                                        #[cfg(not(windows))]
+                                        {
+                                            log_msg(&format!("[localPrinting] Enviando PDF para CUPS '{}'", printer_chosen));
+                                            let _ = std::process::Command::new("lp")
+                                                .arg("-d")
+                                                .arg(&printer_chosen)
+                                                .arg(&doc_file)
+                                                .status();
+                                        }
                                     }
                                 }
-                            }
-
-                            if !is_pdf_printer {
+                            } else {
+                                // Cupom fiscal ou dados brutos (ESC/POS, ZPL)
                                 log_msg(&format!(
-                                    "[localPrinting] Enviando {} bytes para impressora física '{}'...",
+                                    "[localPrinting] Enviando {} bytes brutos para impressora '{}'...",
                                     dados_finais.len(), printer_chosen
                                 ));
                                 match printer::imprimir_raw(&printer_chosen, "Sankhya Documento", &dados_finais) {

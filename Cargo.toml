@@ -1,6 +1,6 @@
 [package]
 name = "sankhya-impressao-rapida"
-version = "1.0.6"
+version = "1.0.7"
 edition = "2021"
 description = "Substituto ultra-leve em Rust para o Sankhya Web Connection (ERP Sankhya W)"
 authors = ["Comunidade Sankhya"]
