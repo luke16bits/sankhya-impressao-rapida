@@ -2,9 +2,9 @@
 [Setup]
 AppId={{E68A5D6B-4C67-428E-8A51-2292E47BF4F1}
 AppName=Sankhya Impressão Rápida
-AppVersion=1.0.9
-AppVerName=Sankhya Impressão Rápida v1.0.9
-UninstallDisplayName=Sankhya Impressão Rápida v1.0.9
+AppVersion=1.1.0
+AppVerName=Sankhya Impressão Rápida v1.1.0
+UninstallDisplayName=Sankhya Impressão Rápida v1.1.0
 AppPublisher=Comunidade Sankhya Open Source
 AppPublisherURL=https://github.com/luke16bits/sankhya-impressao-rapida
 AppSupportURL=https://github.com/luke16bits/sankhya-impressao-rapida/issues

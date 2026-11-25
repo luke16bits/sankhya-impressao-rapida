@@ -183,42 +183,70 @@ fn converter_jasper_para_pdf(xml_data: &[u8]) -> Option<Vec<u8>> {
 /// Abre janela nativa do sistema operacional para o usuário escolher onde salvar o PDF
 #[cfg(windows)]
 fn pedir_caminho_salvar_pdf(sugestao_nome: &str) -> Option<String> {
-    let clean_sugestao = sugestao_nome.replace('\'', "").replace('"', "");
-    let script = format!(
-        "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;\r\n\
-        $form = New-Object System.Windows.Forms.Form;\r\n\
-        $form.TopMost = $true;\r\n\
-        $form.StartPosition = 'Manual';\r\n\
-        $form.Location = New-Object System.Drawing.Point(-2000, -2000);\r\n\
-        $form.Size = New-Object System.Drawing.Size(1, 1);\r\n\
-        $form.Show();\r\n\
-        $d = New-Object System.Windows.Forms.SaveFileDialog;\r\n\
-        $d.Title = 'Save Print Output As';\r\n\
-        $d.Filter = 'PDF Document (*.pdf)|*.pdf';\r\n\
-        $d.FileName = '{}';\r\n\
-        $d.InitialDirectory = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::MyDocuments);\r\n\
-        if ($d.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {{\r\n\
-            [Console]::Out.Write($d.FileName);\r\n\
-        }}\r\n\
-        $form.Close();",
-        clean_sugestao
-    );
+    #[repr(C)]
+    #[allow(non_snake_case)]
+    struct OPENFILENAMEW {
+        lStructSize: u32,
+        hwndOwner: *mut std::ffi::c_void,
+        hInstance: *mut std::ffi::c_void,
+        lpstrFilter: *const u16,
+        lpstrCustomFilter: *mut u16,
+        nMaxCustFilter: u32,
+        nFilterIndex: u32,
+        lpstrFile: *mut u16,
+        nMaxFile: u32,
+        lpstrFileTitle: *mut u16,
+        nMaxFileTitle: u32,
+        lpstrInitialDir: *const u16,
+        lpstrTitle: *const u16,
+        Flags: u32,
+        nFileOffset: u16,
+        nFileExtension: u16,
+        lpstrDefExt: *const u16,
+        lCustData: usize,
+        lpfnHook: *mut std::ffi::c_void,
+        lpTemplateName: *const u16,
+        pvReserved: *mut std::ffi::c_void,
+        dwReserved: u32,
+        FlagsEx: u32,
+    }
 
-    let utf16: Vec<u8> = script
+    #[link(name = "comdlg32")]
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetSaveFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
+        fn GetForegroundWindow() -> *mut std::ffi::c_void;
+    }
+
+    let mut file_buf = [0u16; 1024];
+    let clean_sugestao = sugestao_nome.replace(['\'', '"', '/', '\\', ':', '*', '?', '<', '>', '|'], "_");
+    let sugestao_utf16: Vec<u16> = clean_sugestao.encode_utf16().collect();
+    let len = sugestao_utf16.len().min(file_buf.len() - 1);
+    file_buf[..len].copy_from_slice(&sugestao_utf16[..len]);
+
+    let filter: Vec<u16> = "PDF Document (*.pdf)\0*.pdf\0All Files (*.*)\0*.*\0\0"
         .encode_utf16()
-        .flat_map(|u| u.to_le_bytes())
         .collect();
+    let title: Vec<u16> = "Save Print Output As\0".encode_utf16().collect();
+    let def_ext: Vec<u16> = "pdf\0".encode_utf16().collect();
 
-    let encoded = base64_encode(&utf16);
+    let mut ofn: OPENFILENAMEW = unsafe { std::mem::zeroed() };
+    ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+    ofn.hwndOwner = unsafe { GetForegroundWindow() };
+    ofn.lpstrFilter = filter.as_ptr();
+    ofn.lpstrFile = file_buf.as_mut_ptr();
+    ofn.nMaxFile = file_buf.len() as u32;
+    ofn.lpstrTitle = title.as_ptr();
+    ofn.lpstrDefExt = def_ext.as_ptr();
+    // OFN_EXPLORER (0x00080000) | OFN_PATHMUSTEXIST (0x00000800) | OFN_OVERWRITEPROMPT (0x00000002) | OFN_NOCHANGEDIR (0x00000008)
+    ofn.Flags = 0x00080000 | 0x00000800 | 0x00000002 | 0x00000008;
 
-    let output = std::process::Command::new("powershell")
-        .args(["-STA", "-NoProfile", "-WindowStyle", "Hidden", "-EncodedCommand", &encoded])
-        .output();
-
-    if let Ok(out) = output {
-        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !path.is_empty() {
-            return Some(path);
+    let success = unsafe { GetSaveFileNameW(&mut ofn) };
+    if success != 0 {
+        let end = file_buf.iter().position(|&c| c == 0).unwrap_or(file_buf.len());
+        let chosen = String::from_utf16_lossy(&file_buf[..end]);
+        if !chosen.trim().is_empty() {
+            return Some(chosen);
         }
     }
 

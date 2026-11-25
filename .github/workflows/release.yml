@@ -86,17 +86,17 @@ jobs:
           name: artefatos-windows
           path: .
 
-      - name: Criar ou Atualizar Release v1.0.9
+      - name: Criar ou Atualizar Release v1.1.0
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.9
-          name: "Sankhya Impressão Rápida v1.0.9"
+          tag_name: v1.1.0
+          name: "Sankhya Impressão Rápida v1.1.0"
           body: |
-            ### 🚀 Novidades da Versão 1.0.9:
-            - **Navegador 100% Fluido (Zero Travamentos):** O endpoint `/.localPrinting` responde imediatamente ao Sankhya em < 1 ms, liberando a thread JavaScript do Chrome/Edge instantaneamente e eliminando qualquer risco de tela "Page Unresponsive".
-            - **Diálogo Nativo "Save Print Output As" em Primeiro Plano:** Ao imprimir com "Microsoft Print to PDF", o diálogo padrão do Windows aparece na tela do usuário para seleção de pasta e nome do arquivo PDF.
-            - **Execução na Sessão Interativa do Usuário:** Inicialização automática via Registro (`Run`), garantindo acesso total às impressoras locais/rede e interface gráfica.
-            - **Limpeza Automática de Versões Legadas:** O instalador remove serviços antigos em segundo plano e instala a versão mais recente de forma totalmente limpa.
+            ### 🚀 Novidades da Versão 1.1.0:
+            - **Execução 100% Silenciosa em Segundo Plano (`windows_subsystem`):** Ao iniciar pelo instalador ou na inicialização do Windows, nenhuma janela preta de console/terminal é aberta. O serviço roda de forma invisível consumindo apenas ~4 MB de RAM.
+            - **Diálogo Nativo Win32 (Zero PowerShell na Barra de Tarefas):** A janela "Save Print Output As" ao imprimir em PDF agora usa chamada nativa da API Win32 (`GetSaveFileNameW`), eliminando qualquer processo ou ícone do PowerShell na barra de tarefas.
+            - **Foco e Modalidade Automática:** A janela de salvar PDF abre diretamente na frente do navegador em primeiro plano.
+            - **Instalação e Atualização Limpa:** Inicialização na sessão do usuário via Registro do Windows (`Run`).
           files: |
             Instalador-Sankhya-Impressao-Rapida.exe
             sankhya-impressao-rapida-windows-x64.zip

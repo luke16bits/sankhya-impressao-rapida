@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 pub mod handlers;
 pub mod printer;
 
@@ -117,7 +119,7 @@ pub async fn iniciar_servidores() {
         .layer(middleware::from_fn(cors_and_pna_middleware));
 
     handlers::log_msg("=====================================================");
-    handlers::log_msg("  Sankhya Impressão Rápida v1.0.9 (Rust)");
+    handlers::log_msg("  Sankhya Impressão Rápida v1.1.0 (Rust)");
     handlers::log_msg("  Substituto nativo e ultra-leve para o Web Connection");
     handlers::log_msg(&format!("  Servidor HTTP  em http://127.0.0.1:{}", port_http));
     handlers::log_msg(&format!("  Servidor HTTPS em https://127.0.0.1:{}", port_https));
