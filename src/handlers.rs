@@ -198,22 +198,28 @@ pub async fn local_printing_handler(
 
                             // Descompactar ZIP do Sankhya (ex: ImpressaoNotaServletResponse)
                             if dados_finais.starts_with(b"PK\x03\x04") {
-                                let reader = std::io::Cursor::new(&dados_finais);
-                                if let Ok(mut archive) = zip::ZipArchive::new(reader) {
-                                    if archive.len() > 0 {
-                                        if let Ok(mut file) = archive.by_index(0) {
-                                            let mut decompressed = Vec::new();
-                                            if std::io::copy(&mut file, &mut decompressed).is_ok() {
-                                                log_msg(&format!(
-                                                    "[localPrinting] ZIP descompactado com sucesso! {} bytes compactados -> {} bytes reais (arquivo: {})",
-                                                    dados_finais.len(),
-                                                    decompressed.len(),
-                                                    file.name()
-                                                ));
-                                                dados_finais = decompressed;
+                                let mut decompressed_opt = None;
+                                {
+                                    let reader = std::io::Cursor::new(&dados_finais);
+                                    if let Ok(mut archive) = zip::ZipArchive::new(reader) {
+                                        if archive.len() > 0 {
+                                            if let Ok(mut file) = archive.by_index(0) {
+                                                let mut decompressed = Vec::new();
+                                                if std::io::copy(&mut file, &mut decompressed).is_ok() {
+                                                    decompressed_opt = Some((decompressed, file.name().to_string()));
+                                                }
                                             }
                                         }
                                     }
+                                }
+                                if let Some((decompressed, file_name)) = decompressed_opt {
+                                    log_msg(&format!(
+                                        "[localPrinting] ZIP descompactado com sucesso! {} bytes compactados -> {} bytes reais (arquivo: {})",
+                                        dados_finais.len(),
+                                        decompressed.len(),
+                                        file_name
+                                    ));
+                                    dados_finais = decompressed;
                                 }
                             }
 
