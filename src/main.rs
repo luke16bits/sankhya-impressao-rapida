@@ -158,20 +158,6 @@ fn instalar_certificado_raiz() {
     }
 }
 
-#[cfg(windows)]
-fn elevar_uac(comando: &str) -> bool {
-    let exe = std::env::current_exe().unwrap();
-    let script = format!(
-        "Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -Wait",
-        exe.display(),
-        comando
-    );
-    let status = std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-Command", &script])
-        .status();
-    status.map(|s| s.success()).unwrap_or(false)
-}
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(|s| s.as_str()).unwrap_or("");
@@ -179,12 +165,18 @@ fn main() {
     #[cfg(windows)]
     match cmd {
         "install" | "--install" => {
-            println!("Registrando o serviço no Windows...");
+            println!("Configurando o serviço no Windows...");
             let exe_path = std::env::current_exe().unwrap();
             let bin_path = format!("\"{}\" --service", exe_path.display());
 
             instalar_certificado_raiz();
 
+            // 1. Tenta parar se já estiver rodando
+            let _ = std::process::Command::new("sc.exe")
+                .args(["stop", service::SERVICE_NAME])
+                .status();
+
+            // 2. Tenta criar o serviço
             let status = std::process::Command::new("sc.exe")
                 .args([
                     "create",
@@ -195,22 +187,27 @@ fn main() {
                 ])
                 .status();
 
-            match status {
-                Ok(s) if s.success() => {
-                    println!("Serviço '{}' registrado com sucesso!", service::SERVICE_NAME);
-                    println!("Iniciando o serviço agora...");
+            // 3. Se não criou (ex: serviço já existe), atualiza a configuração do serviço existente
+            if let Ok(s) = &status {
+                if !s.success() {
+                    println!("Serviço já existente detectado. Atualizando configurações...");
                     let _ = std::process::Command::new("sc.exe")
-                        .args(["start", service::SERVICE_NAME])
+                        .args([
+                            "config",
+                            service::SERVICE_NAME,
+                            &format!("binPath={}", bin_path),
+                            "start=auto",
+                            &format!("DisplayName={}", service::SERVICE_DISPLAY_NAME),
+                        ])
                         .status();
-                    println!("Tudo pronto! O serviço está ativo em segundo plano.");
-                }
-                _ => {
-                    println!("Solicitando permissão de Administrador (UAC)...");
-                    if !elevar_uac("install") {
-                        eprintln!("Falha ao registrar serviço. Execute o terminal como Administrador.");
-                    }
                 }
             }
+
+            println!("Iniciando o serviço...");
+            let _ = std::process::Command::new("sc.exe")
+                .args(["start", service::SERVICE_NAME])
+                .status();
+            println!("Tudo pronto! O serviço está ativo em segundo plano.");
             return;
         }
         "uninstall" | "--uninstall" => {
@@ -219,19 +216,11 @@ fn main() {
                 .args(["stop", service::SERVICE_NAME])
                 .status();
 
-            let status = std::process::Command::new("sc.exe")
+            let _ = std::process::Command::new("sc.exe")
                 .args(["delete", service::SERVICE_NAME])
                 .status();
 
-            match status {
-                Ok(s) if s.success() => println!("Serviço '{}' removido com sucesso!", service::SERVICE_NAME),
-                _ => {
-                    println!("Solicitando permissão de Administrador (UAC)...");
-                    if !elevar_uac("uninstall") {
-                        eprintln!("Falha ao remover o serviço.");
-                    }
-                }
-            }
+            println!("Serviço removido com sucesso!");
             return;
         }
         "service" | "--service" => {

@@ -2,7 +2,7 @@
 [Setup]
 AppId={{E68A5D6B-4C67-428E-8A51-2292E47BF4F1}
 AppName=Sankhya Impressão Rápida
-AppVersion=1.0.2
+AppVersion=1.0.3
 AppPublisher=Comunidade Sankhya Open Source
 AppPublisherURL=https://github.com/luke16bits/sankhya-impressao-rapida
 AppSupportURL=https://github.com/luke16bits/sankhya-impressao-rapida/issues
@@ -17,6 +17,7 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
+CloseApplications=force
 
 [Languages]
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
@@ -25,15 +26,26 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 Source: "target\release\sankhya-impressao-rapida.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "certs\cert.pem"; DestDir: "{app}"; Flags: ignoreversion
 
+[Code]
+// Para o serviço anterior e finaliza o processo antes de extrair os novos arquivos
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Exec('sc.exe', 'stop SankhyaImpressaoRapida', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM sankhya-impressao-rapida.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(500);
+  Result := '';
+end;
 
 [Run]
 ; Instalar o certificado SSL local na pasta de Autoridades Raiz Confiáveis
-Filename: "certutil.exe"; Parameters: "-addstore -f ""Root"" ""{app}\cert.pem"""; StatusMsg: "Configurando certificados de segurança locais..."; Flags: runhidden
-; Registrar e iniciar o serviço do Windows
-Filename: "{app}\sankhya-impressao-rapida.exe"; Parameters: "install"; StatusMsg: "Instalando e iniciando o serviço em segundo plano..."; Flags: runhidden
+Filename: "certutil.exe"; Parameters: "-addstore -f ""Root"" ""{app}\cert.pem"""; StatusMsg: "Configurando certificados de segurança locais..."; Flags: runhidden waituntilterminated
+; Registrar/atualizar e iniciar o serviço do Windows
+Filename: "{app}\sankhya-impressao-rapida.exe"; Parameters: "install"; StatusMsg: "Configurando e iniciando o serviço em segundo plano..."; Flags: runhidden waituntilterminated
 
 [UninstallRun]
 ; Parar e remover o serviço na desinstalação antes de remover os arquivos
-Filename: "sc.exe"; Parameters: "stop SankhyaImpressaoRapida"; Flags: runhidden
-Filename: "sc.exe"; Parameters: "delete SankhyaImpressaoRapida"; Flags: runhidden
-Filename: "taskkill.exe"; Parameters: "/F /IM sankhya-impressao-rapida.exe"; Flags: runhidden
+Filename: "sc.exe"; Parameters: "stop SankhyaImpressaoRapida"; Flags: runhidden waituntilterminated
+Filename: "sc.exe"; Parameters: "delete SankhyaImpressaoRapida"; Flags: runhidden waituntilterminated
+Filename: "taskkill.exe"; Parameters: "/F /IM sankhya-impressao-rapida.exe"; Flags: runhidden waituntilterminated
