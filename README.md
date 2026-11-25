@@ -9,23 +9,31 @@
 > 
 > O software original e oficial **Sankhya Web Connection** é de propriedade e autoria da Sankhya Gestão de Negócios Ltda., **funciona perfeitamente** e pode ser obtido oficialmente no portal [downloads.sankhya.com.br](https://downloads.sankhya.com.br).
 > 
-> A finalidade desta implementação alternativa em Rust é puramente técnica: fornecer uma opção nativa e ultra-leve voltada para **eliminar o consumo excessivo de hardware e memória RAM** em terminais e computadores com recursos limitados de processamento.
+> A finalidade desta implementação alternativa em Rust é puramente técnica: fornecer uma opção nativa e ultra-leve voltada para **eliminar o consumo excessivo de hardware e memória RAM** em computadores e servidores com recursos limitados de processamento.
 
 ---
 
 ## 🎯 Por que este projeto existe?
-Com o fim do Navegador Sankhya e a migração oficial do **Sankhya W / Om** para navegadores modernos como o **Google Chrome**, o uso de impressões locais (térmicas, cupom fiscal, etiquetas Zebra e relatórios) tornou-se dependente do aplicativo local *Web Connection*.
+Com o encerramento do antigo Navegador Sankhya e a migração oficial do **Sankhya W / Om** para navegadores modernos como o **Google Chrome** e **Microsoft Edge**, o uso de impressões locais (térmicas, cupom fiscal, impressoras de rede Zebra, Brother e relatórios) tornou-se dependente do aplicativo local *Web Connection*.
 
-No entanto, a implementação baseada em Java consome frequentemente **mais de 250 MB a 512 MB de memória RAM**, demora para inicializar e pode gerar lentidão ou consumo desnecessário em máquinas mais modestas.
+No entanto, a implementação baseada em Java mantém uma máquina virtual Java inteira aberta o tempo todo consumindo frequentemente **mais de 250 MB a 512 MB de memória RAM**, demorando para inicializar e gerando lentidão em máquinas de escritório.
 
 O **Sankhya Impressão Rápida** é uma reengenharia nativa escrita em **Rust**, desenvolvida para fornecer:
-* 🚀 **Velocidade extrema:** Tempo de resposta em microssegundos.
-* 💾 **Economia de memória:** Menos de **5 MB de RAM** (redução de mais de 98% do consumo).
-* ⚙️ **Sem necessidade de Java:** Executável 100% nativo em código de máquina.
-* 🐧 **Multiplataforma Nativo:** Suporte completo para **Windows** e **Linux** (CachyOS, Arch, Ubuntu, etc.).
-* 🛡️ **Serviço Silencioso:** Inicia automaticamente com o sistema operacional sem precisar de janelas abertas ou ícones pesados na bandeja.
-* 📄 **Impressão em PDF sem Travar:** Gravação automática instantânea na Área de Trabalho para "Microsoft Print to PDF" e DANFEs.
-* 🔒 **Comunicação Segura:** Suporte completo HTTPS (`porta 9196`) e HTTP (`porta 9096`) com certificados e suporte ao Private Network Access (PNA) do Chrome.
+* 🚀 **Velocidade extrema:** Tempo de resposta na porta local em microssegundos (menos de 1 ms).
+* 💾 **Consumo mínimo de memória:** Apenas **8 MB a 11 MB de RAM** (redução de mais de 98% do consumo).
+* ⚙️ **Sem necessidade de Java em segundo plano:** Executável compilado em código de máquina puro.
+* 🐧 **Multiplataforma Nativo:** Suporte completo para **Windows** (10, 11 e Server) e **Linux** (CachyOS, Arch, Ubuntu, Debian).
+* 🛡️ **Execução Silenciosa em Segundo Plano:** Inicia automaticamente com o Windows em segundo plano sem abrir janelas pretas de console ou processos pesados.
+* 📄 **Diálogo Nativo "Save Print Output As":** Ao selecionar "Microsoft Print to PDF", o diálogo padrão do Windows aparece na tela para salvar o arquivo onde preferir.
+* 🔒 **Comunicação Segura:** Suporte completo HTTPS (`porta 9196`) e HTTP (`porta 9096`) com certificados locais e conformidade com o Private Network Access (PNA) do Google Chrome.
+
+---
+
+### 📊 Prova de Consumo Real: Menos de 9 MB de Memória RAM
+
+Enquanto o Web Connection oficial em Java consome centenas de megabytes, o **Sankhya Impressão Rápida** roda silenciosamente em segundo plano consumindo apenas **8,6 MB**:
+
+![Consumo de Memória RAM](assets/consumo-memoria-ram.png)
 
 ---
 
@@ -37,7 +45,7 @@ O **Sankhya Impressão Rápida** é uma reengenharia nativa escrita em **Rust**,
         │
         │  Chamadas HTTPS para https://localhost:9196 / http://localhost:9096
         ▼
-[ Sankhya Impressão Rápida (Rust) ] (~3 MB a 5 MB RAM)
+[ Sankhya Impressão Rápida (Rust) ] (~8 MB a 11 MB RAM)
         │
         ├── /.info              -> Validação de status do Web Connection
         ├── /.pList             -> Lista de impressoras instaladas
@@ -45,8 +53,8 @@ O **Sankhya Impressão Rápida** é uma reengenharia nativa escrita em **Rust**,
         ├── /.systemInfo        -> Identificação da máquina e usuário
         └── /.localPrinting     -> Envio de jobs de impressão e DANFEs
         │
-        ├── [Windows] Win32 Spooler API (winspool.drv) / Salvar PDF
-        └── [Linux]   CUPS (lp) / Salvar PDF em ~/Downloads
+        ├── [Windows] Win32 Spooler API (winspool.drv) / "Save Print Output As" (comdlg32)
+        └── [Linux]   CUPS (lp) / Diálogo nativo Zenity em ~/Downloads
 ```
 
 ---
@@ -56,8 +64,8 @@ O **Sankhya Impressão Rápida** é uma reengenharia nativa escrita em **Rust**,
 ### Opção 1: Instalador Automático Windows com 1 Clique (Recomendado) 🌟
 1. Baixe o instalador oficial: **[Instalador-Sankhya-Impressao-Rapida.exe](https://github.com/luke16bits/sankhya-impressao-rapida/releases/latest)**
 2. Dê dois cliques no instalador e siga o assistente ("Avançar" -> "Instalar").
-3. **Pronto!** O serviço será automaticamente instalado, configurado para inicializar com o Windows e já começará a rodar em segundo plano.
-4. Para desinstalar no futuro, basta ir em *Configurações do Windows > Aplicativos > Aplicativos Instalados* e clicar em **Desinstalar**.
+3. **Pronto!** O programa será instalado, configurado para inicializar automaticamente com o Windows em segundo plano e já começará a rodar imediatamente.
+4. Para atualizar ou desinstalar no futuro, basta ir em *Configurações do Windows > Aplicativos > Aplicativos Instalados* e selecionar **Sankhya Impressão Rápida v1.1.0**.
 
 ---
 
@@ -68,7 +76,7 @@ O **Sankhya Impressão Rápida** é uma reengenharia nativa escrita em **Rust**,
    tar -xzvf sankhya-impressao-rapida-linux-x86_64.tar.gz
    ./sankhya-impressao-rapida
    ```
-3. Os PDFs gerados são salvos automaticamente na pasta `~/Downloads`.
+3. Os PDFs gerados são salvos automaticamente na pasta `~/Downloads` ou via diálogo Zenity.
 
 ---
 
@@ -84,15 +92,19 @@ Existem duas maneiras simples de lidar com isso:
   4. Pronto! O Sankhya iniciará direto sem exibir a janela amarela de aviso.
 
 ### 2. Como permitir o acesso no Google Chrome (Private Network Access)?
-Navegadores Chromium modernos bloqueiam requisições de sites externos para o seu computador (`localhost`) por padrão.
+Navegadores Chromium modernos bloqueiam requisições de sites externos para o seu computador (`localhost`) por padrão:
 - Na barra de endereços do Chrome (ao lado do cadeado ou nome do site), clique no **ícone de configurações do site**.
 - Procure por **"Acesso à rede local"** (Local network access) e marque **Permitir**.
 - Essa configuração só precisa ser feita **uma única vez** por navegador.
 
-### 3. Como funciona a impressão em PDF?
-Quando você seleciona a impressora **"Microsoft Print to PDF"** ou imprime DANFEs/relatórios que geram PDF:
-- O arquivo é gerado e gravado instantaneamente na pasta **Área de Trabalho Pública** (`C:\Users\Public\Desktop\Sankhya_DANFE_<data>.pdf`).
-- O arquivo aparece imediatamente na sua Área de Trabalho com qualidade original, sem travar o serviço e sem depender de janelas gráficas de diálogo.
+### 3. Como funciona a impressão em PDF ("Microsoft Print to PDF")?
+Quando você seleciona a impressora **"Microsoft Print to PDF"** ou imprime relatórios/DANFEs que geram saída em PDF:
+1. O sistema abre a janela nativa do Windows **"Save Print Output As"** diretamente na sua tela em primeiro plano.
+2. Você escolhe onde quer salvar o arquivo e o nome desejado com total liberdade.
+3. O documento é gerado em alta definição vetorial e aberto automaticamente no seu visualizador padrão de PDF.
+4. **Dica:** Se preferir visualizar/baixar o PDF direto pelo Sankhya Om sem passar pela fila de impressão do Windows, você também pode usar o botão nativo de pré-visualização de relatório do ERP:
+
+![Botão de Impressão no Sankhya Om](assets/sankhya-tela-impressao.png)
 
 ---
 
@@ -110,4 +122,4 @@ cargo build --release
 ---
 
 ## 📄 Licença
-Distribuído sob a licença MIT. Criado para ajudar a comunidade de clientes e parceiros do ecossistema Sankhya a terem uma experiência mais fluida, estável e moderna no Google Chrome.
+Distribuído sob a licençã MIT. Criado para ajudar a comunidade de clientes e parceiros do ecossistema Sankhya a terem uma experiência mais fluida, estável e moderna no Google Chrome.
