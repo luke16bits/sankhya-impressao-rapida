@@ -7,31 +7,16 @@ authors = ["Comunidade Sankhya"]
 license = "MIT"
 
 [dependencies]
-# Servidor HTTP assíncrono ultra-rápido
 tokio = { version = "1.38", features = ["full"] }
 axum = { version = "0.7", features = ["default"] }
-axum-server = { version = "0.6", features = ["tls-rustls"] }
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+tower-http = { version = "0.5", features = ["cors"] }
 
-# Serialização JSON
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-# Chamadas HTTP seguras para o ERP (quando precisar baixar o documento de impressão)
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
-# API nativa do Windows (Spooler de impressão e informações do sistema)
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = [
-    "Win32_Foundation",
-    "Win32_Graphics_Gdi",
-    "Win32_Networking_WinInet",
-    "Win32_Security",
-    "Win32_System_SystemInformation",
-    "Win32_System_WindowsProgramming",
-    "Win32_System_Threading",
-    "Win32_Storage_FileSystem",
-] }
 windows-service = "0.7"
 
 [profile.release]
