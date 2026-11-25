@@ -86,17 +86,17 @@ jobs:
           name: artefatos-windows
           path: .
 
-      - name: Criar ou Atualizar Release v1.0.3
+      - name: Criar ou Atualizar Release v1.0.4
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.3
-          name: "Sankhya Impressão Rápida v1.0.3"
+          tag_name: v1.0.4
+          name: "Sankhya Impressão Rápida v1.0.4"
           body: |
-            ### 🚀 Novidades e Correções da Versão 1.0.3:
-            - **Correção Definitiva das Janelas UAC / Loop de Instalação:** Corrigido o bug onde a reinstalação ou atualização tentava criar o serviço que já existia e caía em repetição de UAC. Agora detecta serviço existente, atualiza a configuração silenciosamente e reinicia sem abrir janelas em cascata.
-            - **Atualização Fluida sem Travamento de Arquivos:** O instalador agora finaliza a versão anterior com segurança antes de sobrescrever o executável.
-            - **Impressão Direta em PDF sem Travar:** Ao imprimir no "Microsoft Print to PDF" ou DANFEs em PDF, o arquivo é gerado e gravado instantaneamente na Área de Trabalho (`C:\Users\Public\Desktop\Sankhya_DANFE_*.pdf`).
-            - **Suporte Multiplataforma Nativo:** Binários disponíveis para Windows e Linux (CachyOS, Arch, Ubuntu, etc.).
+            ### 🚀 Novidades e Correções da Versão 1.0.4:
+            - **Correção Definitiva do "Web Connection Não Encontrado" / JSON SyntaxError:** O endpoint `/.systemInfo` agora sempre responde com o objeto JSON válido exigido pelo `system.jsp` e `identificarPC.jsp`, independentemente de parâmetros de sessão na URL (matrix params `;sessionId=...`) ou método HTTP.
+            - **Roteamento Inteligente em Fallback:** Todas as rotas do Web Connection (`systemInfo`, `pList`, `pDefaultPrinter`, `localPrinting`) agora são atendidas com 100% de precisão mesmo se o Sankhya anexar `;sessionId=...`.
+            - **Fim das Janelas em Cascata:** Atualização silenciosa e segura sem loops de UAC.
+            - **Impressão Direta em PDF:** Gravação automática de cópias em PDF no Desktop.
             - **Impressão Direta em PDF sem Travar:** Quando selecionado "Microsoft Print to PDF" ou impresso um DANFE/relatório em PDF, o arquivo agora é gerado e salvo automaticamente e de forma instantânea na Área de Trabalho (`C:\Users\Public\Desktop` no Windows e `~/Downloads` no Linux).
             - **Suporte Multiplataforma Nativo:** Agora compatível com Windows e Linux (CachyOS, Arch, Ubuntu, Debian, etc.).
             - **Decodificação Completa de Base64 e JSON:** Decodifica com precisão todos os parâmetros enviados pelo JavaScript do Sankhya (`AppletCaller.js`).

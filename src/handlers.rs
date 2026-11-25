@@ -193,6 +193,12 @@ pub async fn local_printing_handler(
                                 "[localPrinting] Recebidos {} bytes do Sankhya. Enviando para impressora '{}'...",
                                 bytes.len(), printer_chosen
                             ));
+                            if bytes.len() < 1000 {
+                                log_msg(&format!(
+                                    "[localPrinting] Conteúdo dos bytes: {}",
+                                    String::from_utf8_lossy(&bytes)
+                                ));
+                            }
                             match printer::imprimir_raw(&printer_chosen, "Sankhya DANFE", &bytes) {
                                 Ok(res) => log_msg(&format!("[localPrinting] Sucesso: {}", res)),
                                 Err(err) => log_msg(&format!("[localPrinting] Erro no driver: {}", err)),
@@ -226,9 +232,38 @@ pub async fn impressao_direta_texto_handler(
     (StatusCode::OK, "Impressão direta realizada.").into_response()
 }
 
-/// Rota de Fallback para qualquer outro endpoint do Sankhya
-pub async fn fallback_handler(uri: Uri) -> impl IntoResponse {
-    log_msg(&format!("[Fallback] Rota não mapeada chamada: {}", uri));
+/// Rota de Fallback para qualquer outro endpoint do Sankhya (com ou sem ;sessionId=...)
+pub async fn fallback_handler(
+    headers: HeaderMap,
+    uri: Uri,
+) -> impl IntoResponse {
+    let path = uri.path().to_string();
+    log_msg(&format!("[Fallback Dispatcher] Atendendo requisição: path='{}', query='{:?}'", path, uri.query()));
+
+    if path.contains("systemInfo") {
+        log_msg("[Fallback -> systemInfo] Respondendo com JSON de identificação");
+        return system_info_handler().await.into_response();
+    }
+    if path.contains("pList") {
+        log_msg("[Fallback -> pList] Respondendo com lista de impressoras");
+        return plist_handler().await.into_response();
+    }
+    if path.contains("pDefaultPrinter") {
+        log_msg("[Fallback -> pDefaultPrinter] Respondendo com impressora padrão");
+        return pdefault_printer_handler().await.into_response();
+    }
+    if path.contains("localPrinting") {
+        log_msg("[Fallback -> localPrinting] Executando impressão");
+        return local_printing_handler(headers, uri).await.into_response();
+    }
+    if path.contains("impressaoDiretaTexto") {
+        return impressao_direta_texto_handler(None).await.into_response();
+    }
+
+    if uri.query().map(|q| q.contains("webcn=true")).unwrap_or(false) {
+        return (StatusCode::OK, "false").into_response();
+    }
+
     (StatusCode::OK, "dados do sistema:  versao: 1.0 uptime: 0").into_response()
 }
 
