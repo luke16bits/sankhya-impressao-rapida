@@ -1,7 +1,7 @@
 use axum::{
-    extract::{Query, RawQuery},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    extract::Query,
+    http::{HeaderMap, StatusCode, Uri},
+    response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -25,29 +25,27 @@ pub struct SystemInfoResponse {
     pub domain_name: String,
 }
 
-/// Rota GET /.info
-pub async fn info_handler(Query(params): Query<HashMap<String, String>>) -> impl IntoResponse {
-    if let Some(val) = params.get("webcn") {
-        if val == "true" {
-            return (StatusCode::OK, "false").into_response();
-        }
+/// Rota GET/POST /.info
+pub async fn info_handler(uri: Uri) -> impl IntoResponse {
+    if uri.query().map(|q| q.contains("webcn=true")).unwrap_or(false) {
+        return (StatusCode::OK, "false").into_response();
     }
     (StatusCode::OK, "dados do sistema:  versao: 1.0 uptime: 0").into_response()
 }
 
-/// Rota GET /.pList
+/// Rota GET/POST /.pList
 pub async fn plist_handler() -> impl IntoResponse {
     let impressoras = printer::listar_impressoras();
-    (StatusCode::OK, impressoras)
+    (StatusCode::OK, impressoras).into_response()
 }
 
-/// Rota GET /.pDefaultPrinter
+/// Rota GET/POST /.pDefaultPrinter
 pub async fn pdefault_printer_handler() -> impl IntoResponse {
     let padrao = printer::impressora_padrao();
-    (StatusCode::OK, padrao)
+    (StatusCode::OK, padrao).into_response()
 }
 
-/// Rota GET /.systemInfo
+/// Rota GET/POST /.systemInfo
 pub async fn system_info_handler() -> impl IntoResponse {
     let client_name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "LOCALHOST".into());
     let user_name = std::env::var("USERNAME").unwrap_or_else(|_| "USUARIO".into());
@@ -62,31 +60,35 @@ pub async fn system_info_handler() -> impl IntoResponse {
         domain_name,
     };
 
-    Json(sys_info)
+    Json(sys_info).into_response()
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct PrintParams {
     pub params: Option<String>,
 }
 
-/// Rota GET /.localPrinting?params=JSESSIONID|TRANSACTION_ID
+/// Rota GET/POST /.localPrinting
 pub async fn local_printing_handler(
     headers: HeaderMap,
-    Query(params): Query<PrintParams>,
+    uri: Uri,
 ) -> impl IntoResponse {
-    let raw_params = match params.params {
-        Some(p) => p,
-        None => return (StatusCode::BAD_REQUEST, "Parâmetros não informados").into_response(),
-    };
+    let raw_query = uri.query().unwrap_or("");
+    let mut session_id = "";
+    let mut transaction_id = "";
 
-    let parts: Vec<&str> = raw_params.split('|').collect();
-    if parts.len() < 2 {
-        return (StatusCode::BAD_REQUEST, "Formato de parâmetros inválido").into_response();
+    // Tentar extrair do formato ?params=JSESSIONID|TRANSACTION_ID
+    if let Some(idx) = raw_query.find("params=") {
+        let p_val = &raw_query[idx + 7..];
+        let p_end = p_val.find('&').unwrap_or(p_val.len());
+        let val_encoded = &p_val[..p_end];
+        let decoded = urlencoding_decode(val_encoded);
+        let parts: Vec<&str> = decoded.split('|').collect();
+        if parts.len() >= 2 {
+            session_id = parts[0];
+            transaction_id = parts[1];
+        }
     }
-
-    let session_id = parts[0];
-    let transaction_id = parts[1];
 
     let origin = headers
         .get("origin")
@@ -98,8 +100,7 @@ pub async fn local_printing_handler(
         transaction_id, origin, session_id
     );
 
-    // Se tivermos a URL de origem, busca o job de impressão no servidor Sankhya
-    if !origin.is_empty() {
+    if !origin.is_empty() && !transaction_id.is_empty() {
         let print_url = format!(
             "{}/mge/impressaoNotaServlet.mge?acao=execLocalPrint&transactionIds={}&incluirJobsEnviados=true",
             origin, transaction_id
@@ -132,25 +133,41 @@ pub async fn local_printing_handler(
 
 /// Rota GET/POST /.impressaoDiretaTexto
 pub async fn impressao_direta_texto_handler(
-    Query(params): Query<PrintParams>,
     body: Option<String>,
 ) -> impl IntoResponse {
-    let texto = body.unwrap_or_else(|| {
-        params
-            .params
-            .unwrap_or_default()
-            .split('|')
-            .nth(1)
-            .unwrap_or("")
-            .to_string()
-    });
-
-    if !texto.is_empty() {
-        let padrao = printer::impressora_padrao();
-        if !padrao.is_empty() {
-            let _ = printer::imprimir_raw(&padrao, "Sankhya Texto", texto.as_bytes());
+    if let Some(texto) = body {
+        if !texto.is_empty() {
+            let padrao = printer::impressora_padrao();
+            if !padrao.is_empty() {
+                let _ = printer::imprimir_raw(&padrao, "Sankhya Texto", texto.as_bytes());
+            }
         }
     }
+    (StatusCode::OK, "Impressão direta realizada.").into_response()
+}
 
-    (StatusCode::OK, "Impressão direta enviada.").into_response()
+/// Rota de Fallback para qualquer outro endpoint do Sankhya
+pub async fn fallback_handler(uri: Uri) -> impl IntoResponse {
+    println!("[Fallback] Requisição recebida em: {}", uri);
+    (StatusCode::OK, "dados do sistema:  versao: 1.0 uptime: 0").into_response()
+}
+
+fn urlencoding_decode(val: &str) -> String {
+    // Decodificação básica de URL percent-encoding
+    let mut result = String::new();
+    let mut chars = val.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let h1 = chars.next().unwrap_or('0');
+            let h2 = chars.next().unwrap_or('0');
+            if let Ok(byte) = u8::from_str_radix(&format!("{}{}", h1, h2), 16) {
+                result.push(byte as char);
+            }
+        } else if c == '+' {
+            result.push(' ');
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
