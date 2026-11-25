@@ -3,6 +3,8 @@ mod printer;
 mod service;
 
 use axum::{
+    middleware::{self, Next},
+    response::Response,
     routing::{get, post},
     Router,
 };
@@ -14,13 +16,28 @@ use tower_http::cors::{Any, CorsLayer};
 const CERT_PEM: &[u8] = include_bytes!("../certs/cert.pem");
 const KEY_PEM: &[u8] = include_bytes!("../certs/key.pem");
 
-pub async fn iniciar_servidor_https() {
-    let port = std::env::var("PORTA_PRINT")
+async fn add_pna_header(req: axum::extract::Request, next: Next) -> Response {
+    let mut resp = next.run(req).await;
+    resp.headers_mut().insert(
+        "access-control-allow-private-network",
+        axum::http::HeaderValue::from_static("true"),
+    );
+    resp
+}
+
+pub async fn iniciar_servidores() {
+    // Inicializar o provedor criptográfico Ring para o Rustls 0.23
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let port_http = std::env::var("PORTA_HTTP")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(9096);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let port_https = std::env::var("PORTA_HTTPS")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(9196);
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -37,22 +54,45 @@ pub async fn iniciar_servidor_https() {
             "/.impressaoDiretaTexto",
             get(handlers::impressao_direta_texto_handler).post(handlers::impressao_direta_texto_handler),
         )
-        .layer(cors);
+        .layer(cors)
+        .layer(middleware::from_fn(add_pna_header));
 
     println!("=====================================================");
-    println!("  Sankhya Impressão Rápida v1.0.0 (Rust)");
+    println!("  Sankhya Impressão Rápida v1.0.1 (Rust)");
     println!("  Substituto leve e de alta performance do Web Connection");
-    println!("  Aguardando conexões HTTPS em https://{}", addr);
+    println!("  Servidor HTTP  em http://127.0.0.1:{}", port_http);
+    println!("  Servidor HTTPS em https://127.0.0.1:{}", port_https);
     println!("=====================================================");
 
     let tls_config = RustlsConfig::from_pem(CERT_PEM.to_vec(), KEY_PEM.to_vec())
         .await
         .expect("Falha ao carregar certificados TLS embutidos");
 
-    axum_server::bind_rustls(addr, tls_config)
-        .serve(app.into_make_service())
+    let addr_http = SocketAddr::from(([127, 0, 0, 1], port_http));
+    let addr_https = SocketAddr::from(([127, 0, 0, 1], port_https));
+
+    let app_http = app.clone();
+    let app_https = app;
+
+    // Servidor HTTP porta 9096 em background
+    tokio::spawn(async move {
+        match tokio::net::TcpListener::bind(addr_http).await {
+            Ok(listener) => {
+                let _ = axum::serve(listener, app_http).await;
+            }
+            Err(e) => {
+                eprintln!("Aviso: Falha ao abrir porta HTTP {}: {:?}", port_http, e);
+            }
+        }
+    });
+
+    // Servidor HTTPS porta 9196 principal
+    if let Err(e) = axum_server::bind_rustls(addr_https, tls_config)
+        .serve(app_https.into_make_service())
         .await
-        .unwrap();
+    {
+        eprintln!("Erro no servidor HTTPS: {:?}", e);
+    }
 }
 
 fn main() {
@@ -109,7 +149,7 @@ fn main() {
         _ => {
             println!("Iniciando em modo direto (pressione Ctrl+C para encerrar)...");
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(iniciar_servidor_https());
+            rt.block_on(iniciar_servidores());
         }
     }
 }
