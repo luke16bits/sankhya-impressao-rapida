@@ -29,11 +29,16 @@ O **Sankhya Impressão Rápida** é uma reengenharia nativa escrita em **Rust**,
 
 ---
 
-### 📊 Prova de Consumo Real: Menos de 9 MB de Memória RAM
+### 📊 Comparativo Real de Consumo de Memória RAM
 
-Enquanto o Web Connection oficial em Java consome centenas de megabytes, o **Sankhya Impressão Rápida** roda silenciosamente em segundo plano consumindo apenas **8,6 MB**:
+Olha o comando real que o **Web Connection oficial em Java** executa ao iniciar:  
+`-Xms256m -Xmx512m` — ou seja, ele já reserva no mínimo **256 MB de RAM no primeiro segundo** e expande para até **512 MB**:
 
-![Consumo de Memória RAM](assets/consumo-memoria-ram.png)
+| Web Connection Oficial (Java) | Sankhya Impressão Rápida (Rust) |
+| :---: | :---: |
+| **~246 MB a 512 MB de RAM** | **Apenas 8,6 MB de RAM** |
+| ![Consumo Java Oficial](assets/consumo-java-oficial.png) | ![Consumo Rust](assets/consumo-memoria-ram.png) |
+| *Exige máquina virtual Java inteira aberta o dia todo* | *Binário nativo ultra-leve sem JVM (~97% de economia real)* |
 
 ---
 
