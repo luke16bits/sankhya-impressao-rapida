@@ -10,18 +10,58 @@ use axum::{
 };
 use axum_server::tls_rustls::RustlsConfig;
 use std::net::SocketAddr;
-use tower_http::cors::{Any, CorsLayer};
 
 // Embutir o certificado e chave privada direto dentro do binário (Single Executable)
 const CERT_PEM: &[u8] = include_bytes!("../certs/cert.pem");
 const KEY_PEM: &[u8] = include_bytes!("../certs/key.pem");
 
-async fn add_pna_header(req: axum::extract::Request, next: Next) -> Response {
-    let mut resp = next.run(req).await;
-    resp.headers_mut().insert(
+async fn cors_and_pna_middleware(mut req: axum::extract::Request, next: Next) -> Response {
+    // 1. Limpar matrix parameters da URL (ex: /.info;sessionId=123 -> /.info)
+    let uri = req.uri().clone();
+    let path = uri.path();
+    if let Some(idx) = path.find(';') {
+        let clean_path = &path[..idx];
+        let new_uri_str = if let Some(query) = uri.query() {
+            format!("{}?{}", clean_path, query)
+        } else {
+            clean_path.to_string()
+        };
+        if let Ok(parsed) = new_uri_str.parse::<axum::http::Uri>() {
+            *req.uri_mut() = parsed;
+        }
+    }
+
+    let origin = req.headers().get("origin").cloned();
+    let is_options = req.method() == axum::http::Method::OPTIONS;
+
+    let mut resp = if is_options {
+        axum::response::IntoResponse::into_response(axum::http::StatusCode::OK)
+    } else {
+        next.run(req).await
+    };
+
+    let headers = resp.headers_mut();
+    headers.insert(
         "access-control-allow-private-network",
         axum::http::HeaderValue::from_static("true"),
     );
+    headers.insert(
+        "access-control-allow-credentials",
+        axum::http::HeaderValue::from_static("true"),
+    );
+    headers.insert(
+        "access-control-allow-methods",
+        axum::http::HeaderValue::from_static("GET, POST, OPTIONS, HEAD"),
+    );
+    headers.insert(
+        "access-control-allow-headers",
+        axum::http::HeaderValue::from_static("Content-Type, Authorization, X-Requested-With, Origin, Accept, Cookie"),
+    );
+    if let Some(orig) = origin {
+        headers.insert("access-control-allow-origin", orig);
+    } else {
+        headers.insert("access-control-allow-origin", axum::http::HeaderValue::from_static("*"));
+    }
     resp
 }
 
@@ -39,26 +79,36 @@ pub async fn iniciar_servidores() {
         .and_then(|p| p.parse().ok())
         .unwrap_or(9196);
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
     let app = Router::new()
-        .route("/.info", get(handlers::info_handler))
-        .route("/.pList", get(handlers::plist_handler))
-        .route("/.pDefaultPrinter", get(handlers::pdefault_printer_handler))
-        .route("/.systemInfo", get(handlers::system_info_handler).post(handlers::system_info_handler))
-        .route("/.localPrinting", get(handlers::local_printing_handler))
+        .route(
+            "/.info",
+            get(handlers::info_handler).post(handlers::info_handler),
+        )
+        .route(
+            "/.pList",
+            get(handlers::plist_handler).post(handlers::plist_handler),
+        )
+        .route(
+            "/.pDefaultPrinter",
+            get(handlers::pdefault_printer_handler).post(handlers::pdefault_printer_handler),
+        )
+        .route(
+            "/.systemInfo",
+            get(handlers::system_info_handler).post(handlers::system_info_handler),
+        )
+        .route(
+            "/.localPrinting",
+            get(handlers::local_printing_handler).post(handlers::local_printing_handler),
+        )
         .route(
             "/.impressaoDiretaTexto",
             get(handlers::impressao_direta_texto_handler).post(handlers::impressao_direta_texto_handler),
         )
-        .layer(cors)
-        .layer(middleware::from_fn(add_pna_header));
+        .fallback(handlers::fallback_handler)
+        .layer(middleware::from_fn(cors_and_pna_middleware));
 
     println!("=====================================================");
-    println!("  Sankhya Impressão Rápida v1.0.1 (Rust)");
+    println!("  Sankhya Impressão Rápida v1.0.2 (Rust)");
     println!("  Substituto leve e de alta performance do Web Connection");
     println!("  Servidor HTTP  em http://127.0.0.1:{}", port_http);
     println!("  Servidor HTTPS em https://127.0.0.1:{}", port_https);
