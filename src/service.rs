@@ -9,7 +9,7 @@ use windows_service::{
         ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
         ServiceType,
     },
-    service_control_handler::{self, ServiceControlHandlerResult::NotImplemented,
+    service_control_handler::{self, ServiceControlHandlerResult},
     service_dispatcher,
 };
 
