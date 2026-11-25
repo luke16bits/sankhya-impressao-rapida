@@ -26,7 +26,14 @@ jobs:
       - name: Compilar Release
         run: cargo build --release
 
-      - name: Compactar Executável
+      - name: Instalar Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Gerar Instalador do Windows
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+
+      - name: Compactar Executavel Portatil
         run: |
           powershell Compress-Archive -Path target\release\sankhya-impressao-rapida.exe -DestinationPath sankhya-impressao-rapida-windows-x64.zip
 
@@ -43,6 +50,7 @@ jobs:
           name: "Sankhya Impressão Rápida v1.0.0"
           body: "Substituto nativo e ultra-leve em Rust para o Sankhya Web Connection."
           files: |
+            Instalador-Sankhya-Impressao-Rapida.exe
             target/release/sankhya-impressao-rapida.exe
             sankhya-impressao-rapida-windows-x64.zip
         env:
