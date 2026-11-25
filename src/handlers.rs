@@ -4,7 +4,7 @@ use axum::{
     Json,
 };
 use serde::Serialize;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::sync::Mutex;
 
 use crate::printer;
@@ -190,16 +190,39 @@ pub async fn local_printing_handler(
                     if status.is_success() {
                         if let Ok(bytes) = resp.bytes().await {
                             log_msg(&format!(
-                                "[localPrinting] Recebidos {} bytes do Sankhya. Enviando para impressora '{}'...",
-                                bytes.len(), printer_chosen
+                                "[localPrinting] Recebidos {} bytes do Sankhya.",
+                                bytes.len()
                             ));
-                            if bytes.len() < 1000 {
-                                log_msg(&format!(
-                                    "[localPrinting] Conteúdo dos bytes: {}",
-                                    String::from_utf8_lossy(&bytes)
-                                ));
+
+                            let mut dados_finais = bytes.to_vec();
+
+                            // Descompactar ZIP do Sankhya (ex: ImpressaoNotaServletResponse)
+                            if dados_finais.starts_with(b"PK\x03\x04") {
+                                let reader = std::io::Cursor::new(&dados_finais);
+                                if let Ok(mut archive) = zip::ZipArchive::new(reader) {
+                                    if archive.len() > 0 {
+                                        if let Ok(mut file) = archive.by_index(0) {
+                                            let mut decompressed = Vec::new();
+                                            if std::io::copy(&mut file, &mut decompressed).is_ok() {
+                                                log_msg(&format!(
+                                                    "[localPrinting] ZIP descompactado com sucesso! {} bytes compactados -> {} bytes reais (arquivo: {})",
+                                                    dados_finais.len(),
+                                                    decompressed.len(),
+                                                    file.name()
+                                                ));
+                                                dados_finais = decompressed;
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            match printer::imprimir_raw(&printer_chosen, "Sankhya DANFE", &bytes) {
+
+                            log_msg(&format!(
+                                "[localPrinting] Enviando {} bytes para impressora '{}'...",
+                                dados_finais.len(), printer_chosen
+                            ));
+
+                            match printer::imprimir_raw(&printer_chosen, "Sankhya DANFE", &dados_finais) {
                                 Ok(res) => log_msg(&format!("[localPrinting] Sucesso: {}", res)),
                                 Err(err) => log_msg(&format!("[localPrinting] Erro no driver: {}", err)),
                             }
