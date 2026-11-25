@@ -2,7 +2,9 @@
 [Setup]
 AppId={{E68A5D6B-4C67-428E-8A51-2292E47BF4F1}
 AppName=Sankhya Impressão Rápida
-AppVersion=1.0.7
+AppVersion=1.0.8
+AppVerName=Sankhya Impressão Rápida v1.0.8
+UninstallDisplayName=Sankhya Impressão Rápida v1.0.8
 AppPublisher=Comunidade Sankhya Open Source
 AppPublisherURL=https://github.com/luke16bits/sankhya-impressao-rapida
 AppSupportURL=https://github.com/luke16bits/sankhya-impressao-rapida/issues
@@ -39,6 +41,10 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
 begin
+  if FileExists(ExpandConstant('{app}\sankhya-impressao-rapida.exe')) then
+  begin
+    Log('Uma versão anterior foi detectada no sistema. Executando atualização automática limpa...');
+  end;
   Exec('sc.exe', 'stop SankhyaImpressaoRapida', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM sankhya-impressao-rapida.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(500);

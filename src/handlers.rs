@@ -180,6 +180,118 @@ fn converter_jasper_para_pdf(xml_data: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
+/// Abre janela nativa do sistema operacional para o usuário escolher onde salvar o PDF
+#[cfg(windows)]
+fn pedir_caminho_salvar_pdf(sugestao_nome: &str) -> Option<String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use std::ptr::null_mut;
+
+    #[repr(C)]
+    struct OPENFILENAMEW {
+        lStructSize: u32,
+        hwndOwner: *mut std::ffi::c_void,
+        hInstance: *mut std::ffi::c_void,
+        lpstrFilter: *const u16,
+        lpstrCustomFilter: *mut u16,
+        nMaxCustFilter: u32,
+        nFilterIndex: u32,
+        lpstrFile: *mut u16,
+        nMaxFile: u32,
+        lpstrFileTitle: *mut u16,
+        nMaxFileTitle: u32,
+        lpstrInitialDir: *const u16,
+        lpstrTitle: *const u16,
+        Flags: u32,
+        nFileOffset: u16,
+        nFileExtension: u16,
+        lpstrDefExt: *const u16,
+        lCustData: usize,
+        lpfnHook: *mut std::ffi::c_void,
+        lpTemplateName: *const u16,
+        pvReserved: *mut std::ffi::c_void,
+        dwReserved: u32,
+        FlagsEx: u32,
+    }
+
+    #[link(name = "comdlg32")]
+    extern "system" {
+        fn GetSaveFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
+    }
+
+    let filter_str = "PDF Document (*.pdf)\0*.pdf\0All Files (*.*)\0*.*\0\0";
+    let filter: Vec<u16> = filter_str.encode_utf16().collect();
+    let title: Vec<u16> = OsStr::new("Save Print Output As\0").encode_wide().collect();
+    let def_ext: Vec<u16> = OsStr::new("pdf\0").encode_wide().collect();
+
+    let mut file_buf = vec![0u16; 1024];
+    let sugestao_wide: Vec<u16> = OsStr::new(sugestao_nome).encode_wide().collect();
+    for (i, &w) in sugestao_wide.iter().take(1023).enumerate() {
+        file_buf[i] = w;
+    }
+
+    let mut ofn = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: null_mut(),
+        hInstance: null_mut(),
+        lpstrFilter: filter.as_ptr(),
+        lpstrCustomFilter: null_mut(),
+        nMaxCustFilter: 0,
+        nFilterIndex: 1,
+        lpstrFile: file_buf.as_mut_ptr(),
+        nMaxFile: file_buf.len() as u32,
+        lpstrFileTitle: null_mut(),
+        nMaxFileTitle: 0,
+        lpstrInitialDir: null_mut(),
+        lpstrTitle: title.as_ptr(),
+        Flags: 0x00000002 | 0x00000800 | 0x00000008, // OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR
+        nFileOffset: 0,
+        nFileExtension: 0,
+        lpstrDefExt: def_ext.as_ptr(),
+        lCustData: 0,
+        lpfnHook: null_mut(),
+        lpTemplateName: null_mut(),
+        pvReserved: null_mut(),
+        dwReserved: 0,
+        FlagsEx: 0,
+    };
+
+    let ok = unsafe { GetSaveFileNameW(&mut ofn) };
+    if ok != 0 {
+        let len = file_buf.iter().position(|&c| c == 0).unwrap_or(file_buf.len());
+        let os_str = std::ffi::OsString::from_wide(&file_buf[..len]);
+        if let Ok(path) = os_str.into_string() {
+            if !path.is_empty() {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(not(windows))]
+fn pedir_caminho_salvar_pdf(sugestao_nome: &str) -> Option<String> {
+    let output = std::process::Command::new("zenity")
+        .args([
+            "--file-selection",
+            "--save",
+            "--confirm-overwrite",
+            "--file-filter=PDF Document (*.pdf) | *.pdf",
+            &format!("--filename={}", sugestao_nome),
+            "--title=Save Print Output As",
+        ])
+        .output();
+
+    if let Ok(out) = output {
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(path);
+        }
+    }
+    None
+}
+
 /// Serializa um array de String para o formato nativo Java Serialization ([Ljava.lang.String;)
 fn serialize_string_array(items: &[&str]) -> Vec<u8> {
     let mut payload = vec![
@@ -376,32 +488,60 @@ pub async fn local_printing_handler(
                                 || printer_chosen.is_empty();
 
                             if let Some(pdf) = pdf_bytes {
-                                #[cfg(windows)]
-                                let base_dir = std::env::var("USERPROFILE")
-                                    .map(|p| format!("{}/Downloads", p))
-                                    .unwrap_or_else(|_| "C:/Users/Public/Downloads".into());
-                                #[cfg(not(windows))]
-                                let base_dir = std::env::var("HOME")
-                                    .map(|p| format!("{}/Downloads", p))
-                                    .unwrap_or_else(|_| "/tmp".into());
+                                if is_pdf_printer {
+                                    let sugestao = format!("Sankhya_Doc_{}.pdf", chrono_or_simple_time());
+                                    log_msg("[localPrinting] Solicitando ao usuário onde salvar o arquivo PDF...");
+                                    let destino = pedir_caminho_salvar_pdf(&sugestao);
 
-                                let _ = std::fs::create_dir_all(&base_dir);
-                                let doc_file = format!("{}/Sankhya_Doc_{}.pdf", base_dir, chrono_or_simple_time());
-
-                                if std::fs::write(&doc_file, &pdf).is_ok() {
-                                    log_msg(&format!("[localPrinting] PDF salvo com sucesso em: {}", doc_file));
-
-                                    if is_pdf_printer {
-                                        #[cfg(windows)]
-                                        let _ = std::process::Command::new("cmd")
-                                            .args(["/c", "start", "", &doc_file])
-                                            .spawn();
-                                        #[cfg(not(windows))]
-                                        let _ = std::process::Command::new("xdg-open")
-                                            .arg(&doc_file)
-                                            .spawn();
+                                    if let Some(caminho) = destino {
+                                        if std::fs::write(&caminho, &pdf).is_ok() {
+                                            log_msg(&format!("[localPrinting] PDF salvo com sucesso em: {}", caminho));
+                                            #[cfg(windows)]
+                                            let _ = std::process::Command::new("cmd")
+                                                .args(["/c", "start", "", &caminho])
+                                                .spawn();
+                                            #[cfg(not(windows))]
+                                            let _ = std::process::Command::new("xdg-open")
+                                                .arg(&caminho)
+                                                .spawn();
+                                        }
                                     } else {
-                                        // Envio para impressora física
+                                        // Fallback se o diálogo foi cancelado ou fechado
+                                        #[cfg(windows)]
+                                        let base_dir = std::env::var("USERPROFILE")
+                                            .map(|p| format!("{}/Downloads", p))
+                                            .unwrap_or_else(|_| "C:/Users/Public/Downloads".into());
+                                        #[cfg(not(windows))]
+                                        let base_dir = std::env::var("HOME")
+                                            .map(|p| format!("{}/Downloads", p))
+                                            .unwrap_or_else(|_| "/tmp".into());
+
+                                        let _ = std::fs::create_dir_all(&base_dir);
+                                        let fallback_file = format!("{}/{}", base_dir, sugestao);
+                                        if std::fs::write(&fallback_file, &pdf).is_ok() {
+                                            log_msg(&format!(
+                                                "[localPrinting] Diálogo cancelado ou indisponível. Arquivo salvo em Downloads: {}",
+                                                fallback_file
+                                            ));
+                                        }
+                                    }
+                                } else {
+                                    // Envio para impressora física (Brother, etc.)
+                                    #[cfg(windows)]
+                                    let base_dir = std::env::var("USERPROFILE")
+                                        .map(|p| format!("{}/Downloads", p))
+                                        .unwrap_or_else(|_| "C:/Users/Public/Downloads".into());
+                                    #[cfg(not(windows))]
+                                    let base_dir = std::env::var("HOME")
+                                        .map(|p| format!("{}/Downloads", p))
+                                        .unwrap_or_else(|_| "/tmp".into());
+
+                                    let _ = std::fs::create_dir_all(&base_dir);
+                                    let doc_file = format!("{}/Sankhya_Doc_{}.pdf", base_dir, chrono_or_simple_time());
+
+                                    if std::fs::write(&doc_file, &pdf).is_ok() {
+                                        log_msg(&format!("[localPrinting] PDF preparado para envio físico em: {}", doc_file));
+
                                         #[cfg(windows)]
                                         {
                                             let print_cmd = format!(
@@ -554,4 +694,65 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
     }
 
     Some(buf)
+}
+
+/// Rota GET /.checkUpdate e /.update
+pub async fn check_update_handler() -> impl IntoResponse {
+    let client = match reqwest::Client::builder()
+        .user_agent("SankhyaImpressaoRapida")
+        .danger_accept_invalid_certs(true)
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Falha ao criar cliente HTTP").into_response(),
+    };
+
+    let url = "https://api.github.com/repos/luke16bits/sankhya-impressao-rapida/releases/latest";
+    let versao_atual = format!("v{}", env!("CARGO_PKG_VERSION"));
+
+    if let Ok(resp) = client.get(url).send().await {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(tag) = json.get("tag_name").and_then(|t| t.as_str()) {
+                let html_url = json.get("html_url").and_then(|u| u.as_str()).unwrap_or("");
+                let resp_json = serde_json::json!({
+                    "versao_atual": versao_atual,
+                    "versao_recente": tag,
+                    "atualizado": (tag == versao_atual),
+                    "download_url": html_url
+                });
+                return Json(resp_json).into_response();
+            }
+        }
+    }
+
+    (StatusCode::OK, format!("Versão atual: {}", versao_atual)).into_response()
+}
+
+/// Verifica atualizações no GitHub silenciosamente em background
+pub async fn verificar_atualizacoes_github() {
+    let client = match reqwest::Client::builder()
+        .user_agent("SankhyaImpressaoRapida")
+        .danger_accept_invalid_certs(true)
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let url = "https://api.github.com/repos/luke16bits/sankhya-impressao-rapida/releases/latest";
+    if let Ok(resp) = client.get(url).send().await {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(tag) = json.get("tag_name").and_then(|t| t.as_str()) {
+                let versao_atual = format!("v{}", env!("CARGO_PKG_VERSION"));
+                if tag != versao_atual && !versao_atual.contains(tag) {
+                    log_msg(&format!(
+                        "[Update] Nova versão disponível: {} (versão instalada: {})! Baixe a atualização em: https://github.com/luke16bits/sankhya-impressao-rapida/releases",
+                        tag, versao_atual
+                    ));
+                } else {
+                    log_msg(&format!("[Update] O sistema está rodando a versão mais recente ({}).", versao_atual));
+                }
+            }
+        }
+    }
 }

@@ -105,15 +105,29 @@ pub async fn iniciar_servidores() {
             "/.impressaoDiretaTexto",
             get(handlers::impressao_direta_texto_handler).post(handlers::impressao_direta_texto_handler),
         )
+        .route(
+            "/.checkUpdate",
+            get(handlers::check_update_handler),
+        )
+        .route(
+            "/.update",
+            get(handlers::check_update_handler),
+        )
         .fallback(handlers::fallback_handler)
         .layer(middleware::from_fn(cors_and_pna_middleware));
 
     handlers::log_msg("=====================================================");
-    handlers::log_msg("  Sankhya Impressão Rápida v1.0.7 (Rust)");
+    handlers::log_msg("  Sankhya Impressão Rápida v1.0.8 (Rust)");
     handlers::log_msg("  Substituto nativo e ultra-leve para o Web Connection");
     handlers::log_msg(&format!("  Servidor HTTP  em http://127.0.0.1:{}", port_http));
     handlers::log_msg(&format!("  Servidor HTTPS em https://127.0.0.1:{}", port_https));
     handlers::log_msg("=====================================================");
+
+    // Checar atualizações no GitHub silenciosamente em segundo plano
+    tokio::spawn(async {
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        handlers::verificar_atualizacoes_github().await;
+    });
 
     let tls_config = RustlsConfig::from_pem(CERT_PEM.to_vec(), KEY_PEM.to_vec())
         .await

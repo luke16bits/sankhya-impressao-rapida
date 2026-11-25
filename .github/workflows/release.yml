@@ -86,19 +86,19 @@ jobs:
           name: artefatos-windows
           path: .
 
-      - name: Criar ou Atualizar Release v1.0.7
+      - name: Criar ou Atualizar Release v1.0.8
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.7
-          name: "Sankhya Impressão Rápida v1.0.7"
+          tag_name: v1.0.8
+          name: "Sankhya Impressão Rápida v1.0.8"
           body: |
-            ### 🚀 Novidades e Correções da Versão 1.0.7:
-            - **Correção Crítica no Protocolo Java Serialization:** Ajustado descritor de classe `[Ljava.lang.String;` corrigindo definitivamente o erro interno de servlet no WildFly.
-            - **Conversor JasperPrint XML -> PDF Embutido:** Conversão automática e instantânea de relatórios Jasper XML para PDFs de alta resolução via micro-processo (`JasperToPdf.class`).
-            - **Suporte Perfeito a Microsoft Print to PDF e PDF Físico:** Salva o PDF real na pasta Downloads e abre automaticamente na tela ou despacha para a impressora física via spooler nativo do Windows / Linux CUPS.
-            - **Preflight Private Network Access (PNA):** Headers `Access-Control-Allow-Private-Network: true` garantindo permissão em navegadores Chrome e Edge modernos contra restrições de loopback.
-            - **Instalador Resiliente:** Encerramento limpo e seguro de instâncias anteriores antes da substituição de arquivos, prevenindo arquivos travados e loops de janela.
-            - **100% Universal e Aberto:** Código limpo e independente de ambientes específicos.
+            ### 🚀 Novidades da Versão 1.0.8:
+            - **Diálogo Nativo "Save Print Output As":** Ao selecionar "Microsoft Print to PDF", o sistema abre a janela nativa do Windows para o usuário escolher exatamente em qual pasta e com qual nome deseja salvar o PDF gerado.
+            - **Atualização Transparente e Segura:** O instalador detecta versões anteriores já instaladas, finaliza processos com segurança e atualiza sem loops de UAC e sem travar arquivos.
+            - **Exibição Clara da Versão no Windows:** O Painel de Controle e Configurações do Windows exibem claramente a versão instalada ("Sankhya Impressão Rápida v1.0.8").
+            - **Verificador de Atualizações Integrado:** Checagem periódica contra as releases oficiais do GitHub, alertando sobre novidades via log e endpoint `/.checkUpdate`.
+            - **Conversão Ultra-Rápida JasperPrint XML -> PDF:** Processamento em menos de 1 segundo consumindo menos de 8 MB de RAM.
+            - **Suporte Multiplataforma Completo:** Compatível com Windows e Linux (com diálogo Zenity nativo).
           files: |
             Instalador-Sankhya-Impressao-Rapida.exe
             sankhya-impressao-rapida-windows-x64.zip
