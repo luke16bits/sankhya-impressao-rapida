@@ -32,5 +32,7 @@ Filename: "certutil.exe"; Parameters: "-addstore -f ""Root"" ""{app}\cert.pem"""
 Filename: "{app}\sankhya-impressao-rapida.exe"; Parameters: "install"; StatusMsg: "Instalando e iniciando o serviço em segundo plano..."; Flags: runhidden
 
 [UninstallRun]
-; Parar e remover o serviço na desinstalação
-Filename: "{app}\sankhya-impressao-rapida.exe"; Parameters: "uninstall"; Flags: runhidden
+; Parar e remover o serviço na desinstalação antes de remover os arquivos
+Filename: "sc.exe"; Parameters: "stop SankhyaImpressaoRapida"; Flags: runhidden
+Filename: "sc.exe"; Parameters: "delete SankhyaImpressaoRapida"; Flags: runhidden
+Filename: "taskkill.exe"; Parameters: "/F /IM sankhya-impressao-rapida.exe"; Flags: runhidden
