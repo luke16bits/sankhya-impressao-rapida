@@ -86,19 +86,17 @@ jobs:
           name: artefatos-windows
           path: .
 
-      - name: Criar ou Atualizar Release v1.0.8
+      - name: Criar ou Atualizar Release v1.0.9
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.8
-          name: "Sankhya Impressão Rápida v1.0.8"
+          tag_name: v1.0.9
+          name: "Sankhya Impressão Rápida v1.0.9"
           body: |
-            ### 🚀 Novidades da Versão 1.0.8:
-            - **Diálogo Nativo "Save Print Output As":** Ao selecionar "Microsoft Print to PDF", o sistema abre a janela nativa do Windows para o usuário escolher exatamente em qual pasta e com qual nome deseja salvar o PDF gerado.
-            - **Atualização Transparente e Segura:** O instalador detecta versões anteriores já instaladas, finaliza processos com segurança e atualiza sem loops de UAC e sem travar arquivos.
-            - **Exibição Clara da Versão no Windows:** O Painel de Controle e Configurações do Windows exibem claramente a versão instalada ("Sankhya Impressão Rápida v1.0.8").
-            - **Verificador de Atualizações Integrado:** Checagem periódica contra as releases oficiais do GitHub, alertando sobre novidades via log e endpoint `/.checkUpdate`.
-            - **Conversão Ultra-Rápida JasperPrint XML -> PDF:** Processamento em menos de 1 segundo consumindo menos de 8 MB de RAM.
-            - **Suporte Multiplataforma Completo:** Compatível com Windows e Linux (com diálogo Zenity nativo).
+            ### 🚀 Novidades da Versão 1.0.9:
+            - **Navegador 100% Fluido (Zero Travamentos):** O endpoint `/.localPrinting` responde imediatamente ao Sankhya em < 1 ms, liberando a thread JavaScript do Chrome/Edge instantaneamente e eliminando qualquer risco de tela "Page Unresponsive".
+            - **Diálogo Nativo "Save Print Output As" em Primeiro Plano:** Ao imprimir com "Microsoft Print to PDF", o diálogo padrão do Windows aparece na tela do usuário para seleção de pasta e nome do arquivo PDF.
+            - **Execução na Sessão Interativa do Usuário:** Inicialização automática via Registro (`Run`), garantindo acesso total às impressoras locais/rede e interface gráfica.
+            - **Limpeza Automática de Versões Legadas:** O instalador remove serviços antigos em segundo plano e instala a versão mais recente de forma totalmente limpa.
           files: |
             Instalador-Sankhya-Impressao-Rapida.exe
             sankhya-impressao-rapida-windows-x64.zip

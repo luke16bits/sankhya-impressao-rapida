@@ -183,87 +183,42 @@ fn converter_jasper_para_pdf(xml_data: &[u8]) -> Option<Vec<u8>> {
 /// Abre janela nativa do sistema operacional para o usuário escolher onde salvar o PDF
 #[cfg(windows)]
 fn pedir_caminho_salvar_pdf(sugestao_nome: &str) -> Option<String> {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::{OsStrExt, OsStringExt};
-    use std::ptr::null_mut;
+    let clean_sugestao = sugestao_nome.replace('\'', "").replace('"', "");
+    let script = format!(
+        "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;\r\n\
+        $form = New-Object System.Windows.Forms.Form;\r\n\
+        $form.TopMost = $true;\r\n\
+        $form.StartPosition = 'Manual';\r\n\
+        $form.Location = New-Object System.Drawing.Point(-2000, -2000);\r\n\
+        $form.Size = New-Object System.Drawing.Size(1, 1);\r\n\
+        $form.Show();\r\n\
+        $d = New-Object System.Windows.Forms.SaveFileDialog;\r\n\
+        $d.Title = 'Save Print Output As';\r\n\
+        $d.Filter = 'PDF Document (*.pdf)|*.pdf';\r\n\
+        $d.FileName = '{}';\r\n\
+        $d.InitialDirectory = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::MyDocuments);\r\n\
+        if ($d.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {{\r\n\
+            [Console]::Out.Write($d.FileName);\r\n\
+        }}\r\n\
+        $form.Close();",
+        clean_sugestao
+    );
 
-    #[repr(C)]
-    struct OPENFILENAMEW {
-        lStructSize: u32,
-        hwndOwner: *mut std::ffi::c_void,
-        hInstance: *mut std::ffi::c_void,
-        lpstrFilter: *const u16,
-        lpstrCustomFilter: *mut u16,
-        nMaxCustFilter: u32,
-        nFilterIndex: u32,
-        lpstrFile: *mut u16,
-        nMaxFile: u32,
-        lpstrFileTitle: *mut u16,
-        nMaxFileTitle: u32,
-        lpstrInitialDir: *const u16,
-        lpstrTitle: *const u16,
-        Flags: u32,
-        nFileOffset: u16,
-        nFileExtension: u16,
-        lpstrDefExt: *const u16,
-        lCustData: usize,
-        lpfnHook: *mut std::ffi::c_void,
-        lpTemplateName: *const u16,
-        pvReserved: *mut std::ffi::c_void,
-        dwReserved: u32,
-        FlagsEx: u32,
-    }
+    let utf16: Vec<u8> = script
+        .encode_utf16()
+        .flat_map(|u| u.to_le_bytes())
+        .collect();
 
-    #[link(name = "comdlg32")]
-    extern "system" {
-        fn GetSaveFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
-    }
+    let encoded = base64_encode(&utf16);
 
-    let filter_str = "PDF Document (*.pdf)\0*.pdf\0All Files (*.*)\0*.*\0\0";
-    let filter: Vec<u16> = filter_str.encode_utf16().collect();
-    let title: Vec<u16> = OsStr::new("Save Print Output As\0").encode_wide().collect();
-    let def_ext: Vec<u16> = OsStr::new("pdf\0").encode_wide().collect();
+    let output = std::process::Command::new("powershell")
+        .args(["-STA", "-NoProfile", "-WindowStyle", "Hidden", "-EncodedCommand", &encoded])
+        .output();
 
-    let mut file_buf = vec![0u16; 1024];
-    let sugestao_wide: Vec<u16> = OsStr::new(sugestao_nome).encode_wide().collect();
-    for (i, &w) in sugestao_wide.iter().take(1023).enumerate() {
-        file_buf[i] = w;
-    }
-
-    let mut ofn = OPENFILENAMEW {
-        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
-        hwndOwner: null_mut(),
-        hInstance: null_mut(),
-        lpstrFilter: filter.as_ptr(),
-        lpstrCustomFilter: null_mut(),
-        nMaxCustFilter: 0,
-        nFilterIndex: 1,
-        lpstrFile: file_buf.as_mut_ptr(),
-        nMaxFile: file_buf.len() as u32,
-        lpstrFileTitle: null_mut(),
-        nMaxFileTitle: 0,
-        lpstrInitialDir: null_mut(),
-        lpstrTitle: title.as_ptr(),
-        Flags: 0x00000002 | 0x00000800 | 0x00000008, // OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR
-        nFileOffset: 0,
-        nFileExtension: 0,
-        lpstrDefExt: def_ext.as_ptr(),
-        lCustData: 0,
-        lpfnHook: null_mut(),
-        lpTemplateName: null_mut(),
-        pvReserved: null_mut(),
-        dwReserved: 0,
-        FlagsEx: 0,
-    };
-
-    let ok = unsafe { GetSaveFileNameW(&mut ofn) };
-    if ok != 0 {
-        let len = file_buf.iter().position(|&c| c == 0).unwrap_or(file_buf.len());
-        let os_str = std::ffi::OsString::from_wide(&file_buf[..len]);
-        if let Ok(path) = os_str.into_string() {
-            if !path.is_empty() {
-                return Some(path);
-            }
+    if let Ok(out) = output {
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(path);
         }
     }
 
@@ -322,9 +277,24 @@ pub async fn local_printing_handler(
     headers: HeaderMap,
     uri: Uri,
 ) -> impl IntoResponse {
-    let raw_query = uri.query().unwrap_or("");
-    log_msg(&format!("[localPrinting] Requisição recebida: query={}", raw_query));
+    let raw_query = uri.query().unwrap_or("").to_string();
+    let origin = headers
+        .get("origin")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("")
+        .to_string();
 
+    log_msg(&format!("[localPrinting] Requisição recebida do navegador: query={}", raw_query));
+
+    // Responde ao navegador IMEDIATAMENTE (0 ms) para liberar a thread JS do Sankhya e nunca travar o Chrome
+    tokio::spawn(async move {
+        executar_processo_impressao(raw_query, origin).await;
+    });
+
+    (StatusCode::OK, "Servidor realizando impressão.").into_response()
+}
+
+pub async fn executar_processo_impressao(raw_query: String, origin: String) {
     let mut session_id = String::new();
     let mut transaction_id = String::new();
     let mut printer_chosen = String::new();
@@ -368,11 +338,6 @@ pub async fn local_printing_handler(
     if printer_chosen.is_empty() {
         printer_chosen = printer::impressora_padrao();
     }
-
-    let origin = headers
-        .get("origin")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
 
     log_msg(&format!(
         "[localPrinting] Processando: Transaction='{}', Impressora='{}', Origin='{}'",
@@ -587,8 +552,6 @@ pub async fn local_printing_handler(
             }
         }
     }
-
-    (StatusCode::OK, "Servidor realizando impressão.").into_response()
 }
 
 
@@ -655,6 +618,30 @@ fn urlencoding_decode(val: &str) -> String {
             result.push(' ');
         } else {
             result.push(c);
+        }
+    }
+    result
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+
+        result.push(TABLE[(b0 >> 2) as usize] as char);
+        result.push(TABLE[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(TABLE[(((b1 & 0x0F) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(TABLE[(b2 & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
         }
     }
     result
