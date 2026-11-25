@@ -25,14 +25,13 @@ pub async fn iniciar_servidor_https() {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
-        .allow_headers(Any)
-        .expose_headers([axum::http::HeaderName::from_static("access-control-allow-private-network")]);
+        .allow_headers(Any);
 
     let app = Router::new()
         .route("/.info", get(handlers::info_handler))
         .route("/.pList", get(handlers::plist_handler))
         .route("/.pDefaultPrinter", get(handlers::pdefault_printer_handler))
-        .route("/.systemInfo", get(handlers::system_info_handler))
+        .route("/.systemInfo", get(handlers::system_info_handler).post(handlers::system_info_handler))
         .route("/.localPrinting", get(handlers::local_printing_handler))
         .route(
             "/.impressaoDiretaTexto",
@@ -103,13 +102,11 @@ fn main() {
             }
         }
         "service" | "--service" => {
-            // Chamado pelo Gerenciador de Serviços do Windows
             if let Err(e) = service::start_dispatcher() {
                 eprintln!("Erro no despachante do serviço: {:?}", e);
             }
         }
         _ => {
-            // Modo console interativo
             println!("Iniciando em modo direto (pressione Ctrl+C para encerrar)...");
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(iniciar_servidor_https());
