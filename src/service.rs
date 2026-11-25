@@ -1,5 +1,8 @@
 // Módulo para rodar e gerenciar o serviço nativo do Windows (services.msc)
 use std::ffi::OsString;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use windows_service::{
     define_windows_service,
     service::{
@@ -26,12 +29,13 @@ pub fn start_dispatcher() -> Result<(), windows_service::Error> {
 }
 
 fn run_service() -> Result<(), windows_service::Error> {
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
 
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
             ServiceControl::Stop | ServiceControl::Shutdown => {
-                let _ = shutdown_tx;
+                r.store(false, Ordering::SeqCst);
                 ServiceControlHandlerResult::NoError
             }
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
@@ -47,16 +51,19 @@ fn run_service() -> Result<(), windows_service::Error> {
         controls_accepted: ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
         exit_code: ServiceExitCode::Win32(0),
         checkpoint: 0,
-        wait_hint: std::time::Duration::default(),
+        wait_hint: Duration::default(),
         process_id: None,
     })?;
 
-    // Inicia o servidor HTTP em background dentro do runtime Tokio
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         tokio::select! {
             _ = crate::iniciar_servidor_https() => {},
-            _ = &mut shutdown_rx => {},
+            _ = async {
+                while running.load(Ordering::SeqCst) {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            } => {},
         }
     });
 
@@ -66,7 +73,7 @@ fn run_service() -> Result<(), windows_service::Error> {
         controls_accepted: ServiceControlAccept::empty(),
         exit_code: ServiceExitCode::Win32(0),
         checkpoint: 0,
-        wait_hint: std::time::Duration::default(),
+        wait_hint: Duration::default(),
         process_id: None,
     })?;
 
