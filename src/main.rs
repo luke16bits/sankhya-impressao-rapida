@@ -95,6 +95,30 @@ pub async fn iniciar_servidores() {
     }
 }
 
+fn instalar_certificado_raiz() {
+    println!("Instalando certificado SSL na lista de Autoridades Confiáveis do Windows...");
+    let temp_cert = std::env::temp_dir().join("sankhya_cert_temp.pem");
+    if std::fs::write(&temp_cert, CERT_PEM).is_ok() {
+        let _ = std::process::Command::new("certutil.exe")
+            .args(["-addstore", "-f", "Root", temp_cert.to_str().unwrap()])
+            .status();
+        let _ = std::fs::remove_file(temp_cert);
+    }
+}
+
+fn elevar_uac(comando: &str) -> bool {
+    let exe = std::env::current_exe().unwrap();
+    let script = format!(
+        "Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -Wait",
+        exe.display(),
+        comando
+    );
+    let status = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-Command", &script])
+        .status();
+    status.map(|s| s.success()).unwrap_or(false)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(|s| s.as_str()).unwrap_or("");
@@ -104,6 +128,8 @@ fn main() {
             println!("Registrando o serviço no Windows...");
             let exe_path = std::env::current_exe().unwrap();
             let bin_path = format!("\"{}\" --service", exe_path.display());
+
+            instalar_certificado_raiz();
 
             let status = std::process::Command::new("sc.exe")
                 .args([
@@ -122,8 +148,14 @@ fn main() {
                     let _ = std::process::Command::new("sc.exe")
                         .args(["start", service::SERVICE_NAME])
                         .status();
+                    println!("Tudo pronto! O serviço está ativo em segundo plano.");
                 }
-                _ => eprintln!("Falha ao registrar serviço. Certifique-se de executar como Administrador."),
+                _ => {
+                    println!("Solicitando permissão de Administrador (UAC)...");
+                    if !elevar_uac("install") {
+                        eprintln!("Falha ao registrar serviço. Execute o terminal como Administrador.");
+                    }
+                }
             }
         }
         "uninstall" | "--uninstall" => {
@@ -138,7 +170,12 @@ fn main() {
 
             match status {
                 Ok(s) if s.success() => println!("Serviço '{}' removido com sucesso!", service::SERVICE_NAME),
-                _ => eprintln!("Falha ao remover o serviço."),
+                _ => {
+                    println!("Solicitando permissão de Administrador (UAC)...");
+                    if !elevar_uac("uninstall") {
+                        eprintln!("Falha ao remover o serviço.");
+                    }
+                }
             }
         }
         "service" | "--service" => {
@@ -148,6 +185,7 @@ fn main() {
         }
         _ => {
             println!("Iniciando em modo direto (pressione Ctrl+C para encerrar)...");
+            println!("Dica: Para instalar como serviço silencioso do Windows, execute com 'install'.");
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(iniciar_servidores());
         }
