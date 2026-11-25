@@ -25,6 +25,12 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 Source: "target\release\sankhya-impressao-rapida.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "certs\cert.pem"; DestDir: "{app}"; Flags: ignoreversion
 
+[Registry]
+; Liberar automaticamente o acesso a rede local (Private Network Access) no Chrome e Edge sem precisar clicar na chavinha
+Root: HKLM; Subkey: "SOFTWARE\Policies\Google\Chrome\InsecurePrivateNetworkRequestsAllowedForUrls"; ValueType: string; ValueName: "1"; ValueData: "https://*.villacafe.com.br"; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Policies\Google\Chrome\InsecurePrivateNetworkRequestsAllowedForUrls"; ValueType: string; ValueName: "2"; ValueData: "http://*"; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Policies\Microsoft\Edge\InsecurePrivateNetworkRequestsAllowedForUrls"; ValueType: string; ValueName: "1"; ValueData: "https://*.villacafe.com.br"; Flags: uninsdeletevalue
+
 [Run]
 ; Instalar o certificado SSL local na pasta de Autoridades Raiz Confiáveis
 Filename: "certutil.exe"; Parameters: "-addstore -f ""Root"" ""{app}\cert.pem"""; StatusMsg: "Configurando certificados de segurança locais..."; Flags: runhidden
